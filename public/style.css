@@ -1,4 +1,4 @@
-.clappr_playback_name_plugin[data-clappr_playback_name_plugin] {
+.playbackname[data-playbackname] {
   position: absolute;
   z-index: 3000;
   top: 20px;
@@ -12,6 +12,6 @@
   padding: 10px;
 }
 
-.clappr_playback_name_plugin[data-clappr_playback_name_plugin] > p {
+.playbackname[data-playbackname] > p {
   color: white;
 }

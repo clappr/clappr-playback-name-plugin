@@ -14,7 +14,7 @@ var jstFile = './jst.js';
 
 function format(filePath) {
   var content = fs.readFileSync(filePath).toString().replace(/\r?\n|\r/g, '');
-  return {name: 'clappr_playback_name_plugin', content: content};
+  return {name: 'playbackname', content: content};
 }
 
 function copyFiles(asset) {

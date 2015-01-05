@@ -1,5 +1,5 @@
 {
-  "name": "clappr_playback_name_plugin",
+  "name": "playbackname",
   "version": "0.0.0",
   "dependencies": {
     "clappr": "latest"
