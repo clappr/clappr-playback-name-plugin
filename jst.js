@@ -2,11 +2,11 @@
 var _ = require('underscore');
 module.exports = {
 
-  'clappr_playback_name_plugin': _.template('<p>Playback name plugin</p>'),
+  'clappr_playback_name_plugin': _.template('<p>Playback Name</p>'),
 
   CSS: {
     
-      'clappr_playback_name_plugin': '.clappr_playback_name_plugin{color:#0f0}',
+      'clappr_playback_name_plugin': '#clappr_playback_name_plugin{position:absolute;z-index:3000;top:20px;right:20px;font-smooth:never;-webkit-font-smoothing:none;background-color:rgba(0,0,0,.7);color:#fff;border-radius:3px;font-size:16px;padding:10px}#clappr_playback_name_plugin>p{color:#ff0}',
     
   }
 };

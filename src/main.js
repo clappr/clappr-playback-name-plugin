@@ -9,7 +9,7 @@ class ClapprPlaybackNamePlugin extends UiContainerPlugin {
   
   get attributes() {
     return {
-      'class': this.name
+      'id': this.name
     }
   }
   
