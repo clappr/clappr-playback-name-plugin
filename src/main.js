@@ -9,7 +9,8 @@ class ClapprPlaybackNamePlugin extends UiContainerPlugin {
   
   get attributes() {
     return {
-      'id': this.name
+      'class': this.name,
+      'data-clappr_playback_name_plugin': ''
     }
   }
   
@@ -19,11 +20,13 @@ class ClapprPlaybackNamePlugin extends UiContainerPlugin {
   }
 
   render() {
-    console.log("rendering", this.name)
-    var style = Styler.getStyleFor(this.name)
-    this.$el.html(this.template())
-    this.$el.append(style)
+    var playback_name = this.container.playback.name
+    this.$el.html(this.template({'playback_name':playback_name}))
     this.container.$el.append(this.el)
+
+    var style = Styler.getStyleFor(this.name)
+    this.$el.append(style)
+
     return this;
   }
 
