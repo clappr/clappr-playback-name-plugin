@@ -2,7 +2,11 @@
 var _ = require('underscore');
 module.exports = {
 
+  'clappr_playback_name_plugin': _.template('<p>Playback name plugin</p>'),
+
   CSS: {
+    
+      'clappr_playback_name_plugin': '.clappr_playback_name_plugin{color:#0f0}',
     
   }
 };
