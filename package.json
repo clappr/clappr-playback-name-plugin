@@ -1,6 +1,7 @@
 {
   "name": "playbackname",
-  "version": "0.0.0",
+  "description": "A simple plugin for Clappr that adds a label with the playback's name",
+  "version": "0.0.1",
   "dependencies": {
     "clappr": "latest"
   },
