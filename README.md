@@ -23,3 +23,8 @@ var player = new Clappr.Player({
   }
 });
 ```
+
+*Note: There is a minified version served through CDNs too:*
+```html
+<script type="text/javascript" src="//cdn.jsdelivr.net/clappr.playback-name/latest/playbackname.min.js"></script>
+```
