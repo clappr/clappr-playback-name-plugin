@@ -2,7 +2,7 @@
   position: absolute;
   z-index: 3000;
   top: 20px;
-  right: 20px;
+  left: 20px;
   font-smooth: never;
   -webkit-font-smoothing : none;
   background-color: rgba(0,0,0,0.7);
