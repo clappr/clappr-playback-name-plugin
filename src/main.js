@@ -16,11 +16,16 @@ class PlaybackName extends UiContainerPlugin {
   
   constructor(options) {
     super(options)
+    this.listenTo(this.container.playback, 'playback:settingsupdate', this.render)
     this.render()
   }
 
   render() {
-    var playback_name = this.container.playback.name
+    if (!!this.container.playback.playback) {
+      var playback_name = this.container.playback.playback.name
+    } else {
+      var playback_name = this.container.playback.name
+    }
     this.$el.html(this.template({'name':playback_name}))
     this.container.$el.append(this.el)
 
