@@ -6,7 +6,7 @@ module.exports = {
 
   CSS: {
     
-      'playbackname': '.playbackname[data-playbackname]{position:absolute;z-index:3000;top:20px;right:20px;font-smooth:never;-webkit-font-smoothing:none;background-color:rgba(0,0,0,.7);color:#fff;border-radius:3px;font-size:16px;padding:10px}.playbackname[data-playbackname]>p{color:#fff}',
+      'playbackname': '.playbackname[data-playbackname]{position:absolute;z-index:3000;top:20px;left:20px;font-smooth:never;-webkit-font-smoothing:none;background-color:rgba(0,0,0,.7);color:#fff;border-radius:3px;font-size:16px;padding:10px}.playbackname[data-playbackname]>p{color:#fff}',
     
   }
 };
