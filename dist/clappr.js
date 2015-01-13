@@ -16,7 +16,6 @@ module.exports = window.Clappr;
 
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-
 },{"../package.json":6,"./components/iframe_player":17,"./components/player":21,"mediator":"mediator"}],2:[function(require,module,exports){
 // shim for using process in browser
 
@@ -2544,11 +2543,9 @@ System.register("traceur-runtime@0.0.62/src/runtime/polyfills/polyfills", [], fu
 System.get("traceur-runtime@0.0.62/src/runtime/polyfills/polyfills" + '');
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-
 },{"_process":2}],4:[function(require,module,exports){
-/*global define:false */
 /**
- * Copyright 2013 Craig Campbell
+ * Copyright 2012 Craig Campbell
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -2565,940 +2562,787 @@ System.get("traceur-runtime@0.0.62/src/runtime/polyfills/polyfills" + '');
  * Mousetrap is a simple keyboard shortcut library for Javascript with
  * no external dependencies
  *
- * @version 1.4.6
+ * @version 1.1.2
  * @url craig.is/killing/mice
  */
-(function(window, document, undefined) {
-
-    /**
-     * mapping of special keycodes to their corresponding keys
-     *
-     * everything in this dictionary cannot use keypress events
-     * so it has to be here to map to the correct keycodes for
-     * keyup/keydown events
-     *
-     * @type {Object}
-     */
-    var _MAP = {
-            8: 'backspace',
-            9: 'tab',
-            13: 'enter',
-            16: 'shift',
-            17: 'ctrl',
-            18: 'alt',
-            20: 'capslock',
-            27: 'esc',
-            32: 'space',
-            33: 'pageup',
-            34: 'pagedown',
-            35: 'end',
-            36: 'home',
-            37: 'left',
-            38: 'up',
-            39: 'right',
-            40: 'down',
-            45: 'ins',
-            46: 'del',
-            91: 'meta',
-            93: 'meta',
-            224: 'meta'
-        },
-
-        /**
-         * mapping for special characters so they can support
-         *
-         * this dictionary is only used incase you want to bind a
-         * keyup or keydown event to one of these keys
-         *
-         * @type {Object}
-         */
-        _KEYCODE_MAP = {
-            106: '*',
-            107: '+',
-            109: '-',
-            110: '.',
-            111 : '/',
-            186: ';',
-            187: '=',
-            188: ',',
-            189: '-',
-            190: '.',
-            191: '/',
-            192: '`',
-            219: '[',
-            220: '\\',
-            221: ']',
-            222: '\''
-        },
-
-        /**
-         * this is a mapping of keys that require shift on a US keypad
-         * back to the non shift equivelents
-         *
-         * this is so you can use keyup events with these keys
-         *
-         * note that this will only work reliably on US keyboards
-         *
-         * @type {Object}
-         */
-        _SHIFT_MAP = {
-            '~': '`',
-            '!': '1',
-            '@': '2',
-            '#': '3',
-            '$': '4',
-            '%': '5',
-            '^': '6',
-            '&': '7',
-            '*': '8',
-            '(': '9',
-            ')': '0',
-            '_': '-',
-            '+': '=',
-            ':': ';',
-            '\"': '\'',
-            '<': ',',
-            '>': '.',
-            '?': '/',
-            '|': '\\'
-        },
-
-        /**
-         * this is a list of special strings you can use to map
-         * to modifier keys when you specify your keyboard shortcuts
-         *
-         * @type {Object}
-         */
-        _SPECIAL_ALIASES = {
-            'option': 'alt',
-            'command': 'meta',
-            'return': 'enter',
-            'escape': 'esc',
-            'mod': /Mac|iPod|iPhone|iPad/.test(navigator.platform) ? 'meta' : 'ctrl'
-        },
-
-        /**
-         * variable to store the flipped version of _MAP from above
-         * needed to check if we should use keypress or not when no action
-         * is specified
-         *
-         * @type {Object|undefined}
-         */
-        _REVERSE_MAP,
-
-        /**
-         * a list of all the callbacks setup via Mousetrap.bind()
-         *
-         * @type {Object}
-         */
-        _callbacks = {},
-
-        /**
-         * direct map of string combinations to callbacks used for trigger()
-         *
-         * @type {Object}
-         */
-        _directMap = {},
-
-        /**
-         * keeps track of what level each sequence is at since multiple
-         * sequences can start out with the same sequence
-         *
-         * @type {Object}
-         */
-        _sequenceLevels = {},
-
-        /**
-         * variable to store the setTimeout call
-         *
-         * @type {null|number}
-         */
-        _resetTimer,
-
-        /**
-         * temporary state where we will ignore the next keyup
-         *
-         * @type {boolean|string}
-         */
-        _ignoreNextKeyup = false,
-
-        /**
-         * temporary state where we will ignore the next keypress
-         *
-         * @type {boolean}
-         */
-        _ignoreNextKeypress = false,
-
-        /**
-         * are we currently inside of a sequence?
-         * type of action ("keyup" or "keydown" or "keypress") or false
-         *
-         * @type {boolean|string}
-         */
-        _nextExpectedAction = false;
-
-    /**
-     * loop through the f keys, f1 to f19 and add them to the map
-     * programatically
-     */
-    for (var i = 1; i < 20; ++i) {
-        _MAP[111 + i] = 'f' + i;
-    }
-
-    /**
-     * loop through to map numbers on the numeric keypad
-     */
-    for (i = 0; i <= 9; ++i) {
-        _MAP[i + 96] = i;
-    }
-
-    /**
-     * cross browser add event method
-     *
-     * @param {Element|HTMLDocument} object
-     * @param {string} type
-     * @param {Function} callback
-     * @returns void
-     */
-    function _addEvent(object, type, callback) {
-        if (object.addEventListener) {
-            object.addEventListener(type, callback, false);
-            return;
-        }
-
-        object.attachEvent('on' + type, callback);
-    }
-
-    /**
-     * takes the event and returns the key character
-     *
-     * @param {Event} e
-     * @return {string}
-     */
-    function _characterFromEvent(e) {
-
-        // for keypress events we should return the character as is
-        if (e.type == 'keypress') {
-            var character = String.fromCharCode(e.which);
-
-            // if the shift key is not pressed then it is safe to assume
-            // that we want the character to be lowercase.  this means if
-            // you accidentally have caps lock on then your key bindings
-            // will continue to work
-            //
-            // the only side effect that might not be desired is if you
-            // bind something like 'A' cause you want to trigger an
-            // event when capital A is pressed caps lock will no longer
-            // trigger the event.  shift+a will though.
-            if (!e.shiftKey) {
-                character = character.toLowerCase();
-            }
-
-            return character;
-        }
-
-        // for non keypress events the special maps are needed
-        if (_MAP[e.which]) {
-            return _MAP[e.which];
-        }
-
-        if (_KEYCODE_MAP[e.which]) {
-            return _KEYCODE_MAP[e.which];
-        }
-
-        // if it is not in the special map
-
-        // with keydown and keyup events the character seems to always
-        // come in as an uppercase character whether you are pressing shift
-        // or not.  we should make sure it is always lowercase for comparisons
-        return String.fromCharCode(e.which).toLowerCase();
-    }
-
-    /**
-     * checks if two arrays are equal
-     *
-     * @param {Array} modifiers1
-     * @param {Array} modifiers2
-     * @returns {boolean}
-     */
-    function _modifiersMatch(modifiers1, modifiers2) {
-        return modifiers1.sort().join(',') === modifiers2.sort().join(',');
-    }
-
-    /**
-     * resets all sequence counters except for the ones passed in
-     *
-     * @param {Object} doNotReset
-     * @returns void
-     */
-    function _resetSequences(doNotReset) {
-        doNotReset = doNotReset || {};
-
-        var activeSequences = false,
-            key;
-
-        for (key in _sequenceLevels) {
-            if (doNotReset[key]) {
-                activeSequences = true;
-                continue;
-            }
-            _sequenceLevels[key] = 0;
-        }
-
-        if (!activeSequences) {
-            _nextExpectedAction = false;
-        }
-    }
-
-    /**
-     * finds all callbacks that match based on the keycode, modifiers,
-     * and action
-     *
-     * @param {string} character
-     * @param {Array} modifiers
-     * @param {Event|Object} e
-     * @param {string=} sequenceName - name of the sequence we are looking for
-     * @param {string=} combination
-     * @param {number=} level
-     * @returns {Array}
-     */
-    function _getMatches(character, modifiers, e, sequenceName, combination, level) {
-        var i,
-            callback,
-            matches = [],
-            action = e.type;
-
-        // if there are no events related to this keycode
-        if (!_callbacks[character]) {
-            return [];
-        }
-
-        // if a modifier key is coming up on its own we should allow it
-        if (action == 'keyup' && _isModifier(character)) {
-            modifiers = [character];
-        }
-
-        // loop through all callbacks for the key that was pressed
-        // and see if any of them match
-        for (i = 0; i < _callbacks[character].length; ++i) {
-            callback = _callbacks[character][i];
-
-            // if a sequence name is not specified, but this is a sequence at
-            // the wrong level then move onto the next match
-            if (!sequenceName && callback.seq && _sequenceLevels[callback.seq] != callback.level) {
-                continue;
-            }
-
-            // if the action we are looking for doesn't match the action we got
-            // then we should keep going
-            if (action != callback.action) {
-                continue;
-            }
-
-            // if this is a keypress event and the meta key and control key
-            // are not pressed that means that we need to only look at the
-            // character, otherwise check the modifiers as well
-            //
-            // chrome will not fire a keypress if meta or control is down
-            // safari will fire a keypress if meta or meta+shift is down
-            // firefox will fire a keypress if meta or control is down
-            if ((action == 'keypress' && !e.metaKey && !e.ctrlKey) || _modifiersMatch(modifiers, callback.modifiers)) {
-
-                // when you bind a combination or sequence a second time it
-                // should overwrite the first one.  if a sequenceName or
-                // combination is specified in this call it does just that
-                //
-                // @todo make deleting its own method?
-                var deleteCombo = !sequenceName && callback.combo == combination;
-                var deleteSequence = sequenceName && callback.seq == sequenceName && callback.level == level;
-                if (deleteCombo || deleteSequence) {
-                    _callbacks[character].splice(i, 1);
-                }
-
-                matches.push(callback);
-            }
-        }
-
-        return matches;
-    }
-
-    /**
-     * takes a key event and figures out what the modifiers are
-     *
-     * @param {Event} e
-     * @returns {Array}
-     */
-    function _eventModifiers(e) {
-        var modifiers = [];
-
-        if (e.shiftKey) {
-            modifiers.push('shift');
-        }
-
-        if (e.altKey) {
-            modifiers.push('alt');
-        }
-
-        if (e.ctrlKey) {
-            modifiers.push('ctrl');
-        }
-
-        if (e.metaKey) {
-            modifiers.push('meta');
-        }
-
-        return modifiers;
-    }
-
-    /**
-     * prevents default for this event
-     *
-     * @param {Event} e
-     * @returns void
-     */
-    function _preventDefault(e) {
-        if (e.preventDefault) {
-            e.preventDefault();
-            return;
-        }
-
-        e.returnValue = false;
-    }
-
-    /**
-     * stops propogation for this event
-     *
-     * @param {Event} e
-     * @returns void
-     */
-    function _stopPropagation(e) {
-        if (e.stopPropagation) {
-            e.stopPropagation();
-            return;
-        }
-
-        e.cancelBubble = true;
-    }
-
-    /**
-     * actually calls the callback function
-     *
-     * if your callback function returns false this will use the jquery
-     * convention - prevent default and stop propogation on the event
-     *
-     * @param {Function} callback
-     * @param {Event} e
-     * @returns void
-     */
-    function _fireCallback(callback, e, combo, sequence) {
-
-        // if this event should not happen stop here
-        if (Mousetrap.stopCallback(e, e.target || e.srcElement, combo, sequence)) {
-            return;
-        }
-
-        if (callback(e, combo) === false) {
-            _preventDefault(e);
-            _stopPropagation(e);
-        }
-    }
-
-    /**
-     * handles a character key event
-     *
-     * @param {string} character
-     * @param {Array} modifiers
-     * @param {Event} e
-     * @returns void
-     */
-    function _handleKey(character, modifiers, e) {
-        var callbacks = _getMatches(character, modifiers, e),
-            i,
-            doNotReset = {},
-            maxLevel = 0,
-            processedSequenceCallback = false;
-
-        // Calculate the maxLevel for sequences so we can only execute the longest callback sequence
-        for (i = 0; i < callbacks.length; ++i) {
-            if (callbacks[i].seq) {
-                maxLevel = Math.max(maxLevel, callbacks[i].level);
-            }
-        }
-
-        // loop through matching callbacks for this key event
-        for (i = 0; i < callbacks.length; ++i) {
-
-            // fire for all sequence callbacks
-            // this is because if for example you have multiple sequences
-            // bound such as "g i" and "g t" they both need to fire the
-            // callback for matching g cause otherwise you can only ever
-            // match the first one
-            if (callbacks[i].seq) {
-
-                // only fire callbacks for the maxLevel to prevent
-                // subsequences from also firing
-                //
-                // for example 'a option b' should not cause 'option b' to fire
-                // even though 'option b' is part of the other sequence
-                //
-                // any sequences that do not match here will be discarded
-                // below by the _resetSequences call
-                if (callbacks[i].level != maxLevel) {
-                    continue;
-                }
-
-                processedSequenceCallback = true;
-
-                // keep a list of which sequences were matches for later
-                doNotReset[callbacks[i].seq] = 1;
-                _fireCallback(callbacks[i].callback, e, callbacks[i].combo, callbacks[i].seq);
-                continue;
-            }
-
-            // if there were no sequence matches but we are still here
-            // that means this is a regular match so we should fire that
-            if (!processedSequenceCallback) {
-                _fireCallback(callbacks[i].callback, e, callbacks[i].combo);
-            }
-        }
-
-        // if the key you pressed matches the type of sequence without
-        // being a modifier (ie "keyup" or "keypress") then we should
-        // reset all sequences that were not matched by this event
-        //
-        // this is so, for example, if you have the sequence "h a t" and you
-        // type "h e a r t" it does not match.  in this case the "e" will
-        // cause the sequence to reset
-        //
-        // modifier keys are ignored because you can have a sequence
-        // that contains modifiers such as "enter ctrl+space" and in most
-        // cases the modifier key will be pressed before the next key
-        //
-        // also if you have a sequence such as "ctrl+b a" then pressing the
-        // "b" key will trigger a "keypress" and a "keydown"
-        //
-        // the "keydown" is expected when there is a modifier, but the
-        // "keypress" ends up matching the _nextExpectedAction since it occurs
-        // after and that causes the sequence to reset
-        //
-        // we ignore keypresses in a sequence that directly follow a keydown
-        // for the same character
-        var ignoreThisKeypress = e.type == 'keypress' && _ignoreNextKeypress;
-        if (e.type == _nextExpectedAction && !_isModifier(character) && !ignoreThisKeypress) {
-            _resetSequences(doNotReset);
-        }
-
-        _ignoreNextKeypress = processedSequenceCallback && e.type == 'keydown';
-    }
-
-    /**
-     * handles a keydown event
-     *
-     * @param {Event} e
-     * @returns void
-     */
-    function _handleKeyEvent(e) {
-
-        // normalize e.which for key events
-        // @see http://stackoverflow.com/questions/4285627/javascript-keycode-vs-charcode-utter-confusion
-        if (typeof e.which !== 'number') {
-            e.which = e.keyCode;
-        }
-
-        var character = _characterFromEvent(e);
-
-        // no character found then stop
-        if (!character) {
-            return;
-        }
-
-        // need to use === for the character check because the character can be 0
-        if (e.type == 'keyup' && _ignoreNextKeyup === character) {
-            _ignoreNextKeyup = false;
-            return;
-        }
-
-        Mousetrap.handleKey(character, _eventModifiers(e), e);
-    }
-
-    /**
-     * determines if the keycode specified is a modifier key or not
-     *
-     * @param {string} key
-     * @returns {boolean}
-     */
-    function _isModifier(key) {
-        return key == 'shift' || key == 'ctrl' || key == 'alt' || key == 'meta';
-    }
-
-    /**
-     * called to set a 1 second timeout on the specified sequence
-     *
-     * this is so after each key press in the sequence you have 1 second
-     * to press the next key before you have to start over
-     *
-     * @returns void
-     */
-    function _resetSequenceTimer() {
-        clearTimeout(_resetTimer);
-        _resetTimer = setTimeout(_resetSequences, 1000);
-    }
-
-    /**
-     * reverses the map lookup so that we can look for specific keys
-     * to see what can and can't use keypress
-     *
-     * @return {Object}
-     */
-    function _getReverseMap() {
-        if (!_REVERSE_MAP) {
-            _REVERSE_MAP = {};
-            for (var key in _MAP) {
-
-                // pull out the numeric keypad from here cause keypress should
-                // be able to detect the keys from the character
-                if (key > 95 && key < 112) {
-                    continue;
-                }
-
-                if (_MAP.hasOwnProperty(key)) {
-                    _REVERSE_MAP[_MAP[key]] = key;
-                }
-            }
-        }
-        return _REVERSE_MAP;
-    }
-
-    /**
-     * picks the best action based on the key combination
-     *
-     * @param {string} key - character for key
-     * @param {Array} modifiers
-     * @param {string=} action passed in
-     */
-    function _pickBestAction(key, modifiers, action) {
-
-        // if no action was picked in we should try to pick the one
-        // that we think would work best for this key
-        if (!action) {
-            action = _getReverseMap()[key] ? 'keydown' : 'keypress';
-        }
-
-        // modifier keys don't work as expected with keypress,
-        // switch to keydown
-        if (action == 'keypress' && modifiers.length) {
-            action = 'keydown';
-        }
-
-        return action;
-    }
-
-    /**
-     * binds a key sequence to an event
-     *
-     * @param {string} combo - combo specified in bind call
-     * @param {Array} keys
-     * @param {Function} callback
-     * @param {string=} action
-     * @returns void
-     */
-    function _bindSequence(combo, keys, callback, action) {
-
-        // start off by adding a sequence level record for this combination
-        // and setting the level to 0
-        _sequenceLevels[combo] = 0;
-
-        /**
-         * callback to increase the sequence level for this sequence and reset
-         * all other sequences that were active
-         *
-         * @param {string} nextAction
-         * @returns {Function}
-         */
-        function _increaseSequence(nextAction) {
-            return function() {
-                _nextExpectedAction = nextAction;
-                ++_sequenceLevels[combo];
-                _resetSequenceTimer();
-            };
-        }
-
-        /**
-         * wraps the specified callback inside of another function in order
-         * to reset all sequence counters as soon as this sequence is done
-         *
-         * @param {Event} e
-         * @returns void
-         */
-        function _callbackAndReset(e) {
-            _fireCallback(callback, e, combo);
-
-            // we should ignore the next key up if the action is key down
-            // or keypress.  this is so if you finish a sequence and
-            // release the key the final key will not trigger a keyup
-            if (action !== 'keyup') {
-                _ignoreNextKeyup = _characterFromEvent(e);
-            }
-
-            // weird race condition if a sequence ends with the key
-            // another sequence begins with
-            setTimeout(_resetSequences, 10);
-        }
-
-        // loop through keys one at a time and bind the appropriate callback
-        // function.  for any key leading up to the final one it should
-        // increase the sequence. after the final, it should reset all sequences
-        //
-        // if an action is specified in the original bind call then that will
-        // be used throughout.  otherwise we will pass the action that the
-        // next key in the sequence should match.  this allows a sequence
-        // to mix and match keypress and keydown events depending on which
-        // ones are better suited to the key provided
-        for (var i = 0; i < keys.length; ++i) {
-            var isFinal = i + 1 === keys.length;
-            var wrappedCallback = isFinal ? _callbackAndReset : _increaseSequence(action || _getKeyInfo(keys[i + 1]).action);
-            _bindSingle(keys[i], wrappedCallback, action, combo, i);
-        }
-    }
-
-    /**
-     * Converts from a string key combination to an array
-     *
-     * @param  {string} combination like "command+shift+l"
-     * @return {Array}
-     */
-    function _keysFromString(combination) {
-        if (combination === '+') {
-            return ['+'];
-        }
-
-        return combination.split('+');
-    }
-
-    /**
-     * Gets info for a specific key combination
-     *
-     * @param  {string} combination key combination ("command+s" or "a" or "*")
-     * @param  {string=} action
-     * @returns {Object}
-     */
-    function _getKeyInfo(combination, action) {
-        var keys,
-            key,
-            i,
-            modifiers = [];
-
-        // take the keys from this pattern and figure out what the actual
-        // pattern is all about
-        keys = _keysFromString(combination);
-
-        for (i = 0; i < keys.length; ++i) {
-            key = keys[i];
-
-            // normalize key names
-            if (_SPECIAL_ALIASES[key]) {
-                key = _SPECIAL_ALIASES[key];
-            }
-
-            // if this is not a keypress event then we should
-            // be smart about using shift keys
-            // this will only work for US keyboards however
-            if (action && action != 'keypress' && _SHIFT_MAP[key]) {
-                key = _SHIFT_MAP[key];
-                modifiers.push('shift');
-            }
-
-            // if this key is a modifier then add it to the list of modifiers
-            if (_isModifier(key)) {
-                modifiers.push(key);
-            }
-        }
-
-        // depending on what the key combination is
-        // we will try to pick the best event for it
-        action = _pickBestAction(key, modifiers, action);
-
-        return {
-            key: key,
-            modifiers: modifiers,
-            action: action
-        };
-    }
-
-    /**
-     * binds a single keyboard combination
-     *
-     * @param {string} combination
-     * @param {Function} callback
-     * @param {string=} action
-     * @param {string=} sequenceName - name of sequence if part of sequence
-     * @param {number=} level - what part of the sequence the command is
-     * @returns void
-     */
-    function _bindSingle(combination, callback, action, sequenceName, level) {
-
-        // store a direct mapped reference for use with Mousetrap.trigger
-        _directMap[combination + ':' + action] = callback;
-
-        // make sure multiple spaces in a row become a single space
-        combination = combination.replace(/\s+/g, ' ');
-
-        var sequence = combination.split(' '),
-            info;
-
-        // if this pattern is a sequence of keys then run through this method
-        // to reprocess each pattern one key at a time
-        if (sequence.length > 1) {
-            _bindSequence(combination, sequence, callback, action);
-            return;
-        }
-
-        info = _getKeyInfo(combination, action);
-
-        // make sure to initialize array if this is the first time
-        // a callback is added for this key
-        _callbacks[info.key] = _callbacks[info.key] || [];
-
-        // remove an existing match if there is one
-        _getMatches(info.key, info.modifiers, {type: info.action}, sequenceName, combination, level);
-
-        // add this call back to the array
-        // if it is a sequence put it at the beginning
-        // if not put it at the end
-        //
-        // this is important because the way these are processed expects
-        // the sequence ones to come first
-        _callbacks[info.key][sequenceName ? 'unshift' : 'push']({
-            callback: callback,
-            modifiers: info.modifiers,
-            action: info.action,
-            seq: sequenceName,
-            level: level,
-            combo: combination
-        });
-    }
-
-    /**
-     * binds multiple combinations to the same callback
-     *
-     * @param {Array} combinations
-     * @param {Function} callback
-     * @param {string|undefined} action
-     * @returns void
-     */
-    function _bindMultiple(combinations, callback, action) {
-        for (var i = 0; i < combinations.length; ++i) {
-            _bindSingle(combinations[i], callback, action);
-        }
-    }
-
-    // start!
-    _addEvent(document, 'keypress', _handleKeyEvent);
-    _addEvent(document, 'keydown', _handleKeyEvent);
-    _addEvent(document, 'keyup', _handleKeyEvent);
-
-    var Mousetrap = {
-
-        /**
-         * binds an event to mousetrap
-         *
-         * can be a single key, a combination of keys separated with +,
-         * an array of keys, or a sequence of keys separated by spaces
-         *
-         * be sure to list the modifier keys first to make sure that the
-         * correct key ends up getting bound (the last key in the pattern)
-         *
-         * @param {string|Array} keys
-         * @param {Function} callback
-         * @param {string=} action - 'keypress', 'keydown', or 'keyup'
-         * @returns void
-         */
-        bind: function(keys, callback, action) {
-            keys = keys instanceof Array ? keys : [keys];
-            _bindMultiple(keys, callback, action);
-            return this;
-        },
-
-        /**
-         * unbinds an event to mousetrap
-         *
-         * the unbinding sets the callback function of the specified key combo
-         * to an empty function and deletes the corresponding key in the
-         * _directMap dict.
-         *
-         * TODO: actually remove this from the _callbacks dictionary instead
-         * of binding an empty function
-         *
-         * the keycombo+action has to be exactly the same as
-         * it was defined in the bind method
-         *
-         * @param {string|Array} keys
-         * @param {string} action
-         * @returns void
-         */
-        unbind: function(keys, action) {
-            return Mousetrap.bind(keys, function() {}, action);
-        },
-
-        /**
-         * triggers an event that has already been bound
-         *
-         * @param {string} keys
-         * @param {string=} action
-         * @returns void
-         */
-        trigger: function(keys, action) {
-            if (_directMap[keys + ':' + action]) {
-                _directMap[keys + ':' + action]({}, keys);
-            }
-            return this;
-        },
-
-        /**
-         * resets the library back to its initial state.  this is useful
-         * if you want to clear out the current keyboard shortcuts and bind
-         * new ones - for example if you switch to another page
-         *
-         * @returns void
-         */
-        reset: function() {
-            _callbacks = {};
-            _directMap = {};
-            return this;
-        },
-
-       /**
-        * should we stop this event before firing off callbacks
-        *
-        * @param {Event} e
-        * @param {Element} element
-        * @return {boolean}
-        */
-        stopCallback: function(e, element) {
-
-            // if the element has the class "mousetrap" then no need to stop
-            if ((' ' + element.className + ' ').indexOf(' mousetrap ') > -1) {
-                return false;
-            }
-
-            // stop for input, select, and textarea
-            return element.tagName == 'INPUT' || element.tagName == 'SELECT' || element.tagName == 'TEXTAREA' || element.isContentEditable;
-        },
-
-        /**
-         * exposes _handleKey publicly so it can be overwritten by extensions
-         */
-        handleKey: _handleKey
-    };
-
-    // expose mousetrap to the global object
-    window.Mousetrap = Mousetrap;
-
-    // expose mousetrap as an AMD module
-    if (typeof define === 'function' && define.amd) {
-        define(Mousetrap);
-    }
-}) (window, document);
+
+  /**
+   * mapping of special keycodes to their corresponding keys
+   *
+   * everything in this dictionary cannot use keypress events
+   * so it has to be here to map to the correct keycodes for
+   * keyup/keydown events
+   *
+   * @type {Object}
+   */
+  var _MAP = {
+          8: 'backspace',
+          9: 'tab',
+          13: 'enter',
+          16: 'shift',
+          17: 'ctrl',
+          18: 'alt',
+          20: 'capslock',
+          27: 'esc',
+          32: 'space',
+          33: 'pageup',
+          34: 'pagedown',
+          35: 'end',
+          36: 'home',
+          37: 'left',
+          38: 'up',
+          39: 'right',
+          40: 'down',
+          45: 'ins',
+          46: 'del',
+          91: 'meta',
+          93: 'meta',
+          224: 'meta'
+      },
+
+      /**
+       * mapping for special characters so they can support
+       *
+       * this dictionary is only used incase you want to bind a
+       * keyup or keydown event to one of these keys
+       *
+       * @type {Object}
+       */
+      _KEYCODE_MAP = {
+          106: '*',
+          107: '+',
+          109: '-',
+          110: '.',
+          111 : '/',
+          186: ';',
+          187: '=',
+          188: ',',
+          189: '-',
+          190: '.',
+          191: '/',
+          192: '`',
+          219: '[',
+          220: '\\',
+          221: ']',
+          222: '\''
+      },
+
+      /**
+       * this is a mapping of keys that require shift on a US keypad
+       * back to the non shift equivelents
+       *
+       * this is so you can use keyup events with these keys
+       *
+       * note that this will only work reliably on US keyboards
+       *
+       * @type {Object}
+       */
+      _SHIFT_MAP = {
+          '~': '`',
+          '!': '1',
+          '@': '2',
+          '#': '3',
+          '$': '4',
+          '%': '5',
+          '^': '6',
+          '&': '7',
+          '*': '8',
+          '(': '9',
+          ')': '0',
+          '_': '-',
+          '+': '=',
+          ':': ';',
+          '\"': '\'',
+          '<': ',',
+          '>': '.',
+          '?': '/',
+          '|': '\\'
+      },
+
+      /**
+       * this is a list of special strings you can use to map
+       * to modifier keys when you specify your keyboard shortcuts
+       *
+       * @type {Object}
+       */
+      _SPECIAL_ALIASES = {
+          'option': 'alt',
+          'command': 'meta',
+          'return': 'enter',
+          'escape': 'esc'
+      },
+
+      /**
+       * variable to store the flipped version of _MAP from above
+       * needed to check if we should use keypress or not when no action
+       * is specified
+       *
+       * @type {Object|undefined}
+       */
+      _REVERSE_MAP,
+
+      /**
+       * a list of all the callbacks setup via Mousetrap.bind()
+       *
+       * @type {Object}
+       */
+      _callbacks = {},
+
+      /**
+       * direct map of string combinations to callbacks used for trigger()
+       *
+       * @type {Object}
+       */
+      _direct_map = {},
+
+      /**
+       * keeps track of what level each sequence is at since multiple
+       * sequences can start out with the same sequence
+       *
+       * @type {Object}
+       */
+      _sequence_levels = {},
+
+      /**
+       * variable to store the setTimeout call
+       *
+       * @type {null|number}
+       */
+      _reset_timer,
+
+      /**
+       * temporary state where we will ignore the next keyup
+       *
+       * @type {boolean|string}
+       */
+      _ignore_next_keyup = false,
+
+      /**
+       * are we currently inside of a sequence?
+       * type of action ("keyup" or "keydown" or "keypress") or false
+       *
+       * @type {boolean|string}
+       */
+      _inside_sequence = false;
+
+  /**
+   * loop through the f keys, f1 to f19 and add them to the map
+   * programatically
+   */
+  for (var i = 1; i < 20; ++i) {
+      _MAP[111 + i] = 'f' + i;
+  }
+
+  /**
+   * loop through to map numbers on the numeric keypad
+   */
+  for (i = 0; i <= 9; ++i) {
+      _MAP[i + 96] = i;
+  }
+
+  /**
+   * cross browser add event method
+   *
+   * @param {Element|HTMLDocument} object
+   * @param {string} type
+   * @param {Function} callback
+   * @returns void
+   */
+  function _addEvent(object, type, callback) {
+      if (object.addEventListener) {
+          return object.addEventListener(type, callback, false);
+      }
+
+      object.attachEvent('on' + type, callback);
+  }
+
+  /**
+   * takes the event and returns the key character
+   *
+   * @param {Event} e
+   * @return {string}
+   */
+  function _characterFromEvent(e) {
+
+      // for keypress events we should return the character as is
+      if (e.type == 'keypress') {
+          return String.fromCharCode(e.which);
+      }
+
+      // for non keypress events the special maps are needed
+      if (_MAP[e.which]) {
+          return _MAP[e.which];
+      }
+
+      if (_KEYCODE_MAP[e.which]) {
+          return _KEYCODE_MAP[e.which];
+      }
+
+      // if it is not in the special map
+      return String.fromCharCode(e.which).toLowerCase();
+  }
+
+  /**
+   * should we stop this event before firing off callbacks
+   *
+   * @param {Event} e
+   * @return {boolean}
+   */
+  function _stop(e) {
+      var element = e.target || e.srcElement,
+          tag_name = element.tagName;
+
+      // if the element has the class "mousetrap" then no need to stop
+      if ((' ' + element.className + ' ').indexOf(' mousetrap ') > -1) {
+          return false;
+      }
+
+      // stop for input, select, and textarea
+      return tag_name == 'INPUT' || tag_name == 'SELECT' || tag_name == 'TEXTAREA' || (element.contentEditable && element.contentEditable == 'true');
+  }
+
+  /**
+   * checks if two arrays are equal
+   *
+   * @param {Array} modifiers1
+   * @param {Array} modifiers2
+   * @returns {boolean}
+   */
+  function _modifiersMatch(modifiers1, modifiers2) {
+      return modifiers1.sort().join(',') === modifiers2.sort().join(',');
+  }
+
+  /**
+   * resets all sequence counters except for the ones passed in
+   *
+   * @param {Object} do_not_reset
+   * @returns void
+   */
+  function _resetSequences(do_not_reset) {
+      do_not_reset = do_not_reset || {};
+
+      var active_sequences = false,
+          key;
+
+      for (key in _sequence_levels) {
+          if (do_not_reset[key]) {
+              active_sequences = true;
+              continue;
+          }
+          _sequence_levels[key] = 0;
+      }
+
+      if (!active_sequences) {
+          _inside_sequence = false;
+      }
+  }
+
+  /**
+   * finds all callbacks that match based on the keycode, modifiers,
+   * and action
+   *
+   * @param {string} character
+   * @param {Array} modifiers
+   * @param {string} action
+   * @param {boolean=} remove - should we remove any matches
+   * @param {string=} combination
+   * @returns {Array}
+   */
+  function _getMatches(character, modifiers, action, remove, combination) {
+      var i,
+          callback,
+          matches = [];
+
+      // if there are no events related to this keycode
+      if (!_callbacks[character]) {
+          return [];
+      }
+
+      // if a modifier key is coming up on its own we should allow it
+      if (action == 'keyup' && _isModifier(character)) {
+          modifiers = [character];
+      }
+
+      // loop through all callbacks for the key that was pressed
+      // and see if any of them match
+      for (i = 0; i < _callbacks[character].length; ++i) {
+          callback = _callbacks[character][i];
+
+          // if this is a sequence but it is not at the right level
+          // then move onto the next match
+          if (callback.seq && _sequence_levels[callback.seq] != callback.level) {
+              continue;
+          }
+
+          // if the action we are looking for doesn't match the action we got
+          // then we should keep going
+          if (action != callback.action) {
+              continue;
+          }
+
+          // if this is a keypress event that means that we need to only
+          // look at the character, otherwise check the modifiers as
+          // well
+          if (action == 'keypress' || _modifiersMatch(modifiers, callback.modifiers)) {
+
+              // remove is used so if you change your mind and call bind a
+              // second time with a new function the first one is overwritten
+              if (remove && callback.combo == combination) {
+                  _callbacks[character].splice(i, 1);
+              }
+
+              matches.push(callback);
+          }
+      }
+
+      return matches;
+  }
+
+  /**
+   * takes a key event and figures out what the modifiers are
+   *
+   * @param {Event} e
+   * @returns {Array}
+   */
+  function _eventModifiers(e) {
+      var modifiers = [];
+
+      if (e.shiftKey) {
+          modifiers.push('shift');
+      }
+
+      if (e.altKey) {
+          modifiers.push('alt');
+      }
+
+      if (e.ctrlKey) {
+          modifiers.push('ctrl');
+      }
+
+      if (e.metaKey) {
+          modifiers.push('meta');
+      }
+
+      return modifiers;
+  }
+
+  /**
+   * actually calls the callback function
+   *
+   * if your callback function returns false this will use the jquery
+   * convention - prevent default and stop propogation on the event
+   *
+   * @param {Function} callback
+   * @param {Event} e
+   * @returns void
+   */
+  function _fireCallback(callback, e) {
+      if (callback(e) === false) {
+          if (e.preventDefault) {
+              e.preventDefault();
+          }
+
+          if (e.stopPropagation) {
+              e.stopPropagation();
+          }
+
+          e.returnValue = false;
+          e.cancelBubble = true;
+      }
+  }
+
+  /**
+   * handles a character key event
+   *
+   * @param {string} character
+   * @param {Event} e
+   * @returns void
+   */
+  function _handleCharacter(character, e) {
+
+      // if this event should not happen stop here
+      if (_stop(e)) {
+          return;
+      }
+
+      var callbacks = _getMatches(character, _eventModifiers(e), e.type),
+          i,
+          do_not_reset = {},
+          processed_sequence_callback = false;
+
+      // loop through matching callbacks for this key event
+      for (i = 0; i < callbacks.length; ++i) {
+
+          // fire for all sequence callbacks
+          // this is because if for example you have multiple sequences
+          // bound such as "g i" and "g t" they both need to fire the
+          // callback for matching g cause otherwise you can only ever
+          // match the first one
+          if (callbacks[i].seq) {
+              processed_sequence_callback = true;
+
+              // keep a list of which sequences were matches for later
+              do_not_reset[callbacks[i].seq] = 1;
+              _fireCallback(callbacks[i].callback, e);
+              continue;
+          }
+
+          // if there were no sequence matches but we are still here
+          // that means this is a regular match so we should fire that
+          if (!processed_sequence_callback && !_inside_sequence) {
+              _fireCallback(callbacks[i].callback, e);
+          }
+      }
+
+      // if you are inside of a sequence and the key you are pressing
+      // is not a modifier key then we should reset all sequences
+      // that were not matched by this key event
+      if (e.type == _inside_sequence && !_isModifier(character)) {
+          _resetSequences(do_not_reset);
+      }
+  }
+
+  /**
+   * handles a keydown event
+   *
+   * @param {Event} e
+   * @returns void
+   */
+  function _handleKey(e) {
+
+      // normalize e.which for key events
+      // @see http://stackoverflow.com/questions/4285627/javascript-keycode-vs-charcode-utter-confusion
+      e.which = typeof e.which == "number" ? e.which : e.keyCode;
+
+      var character = _characterFromEvent(e);
+
+      // no character found then stop
+      if (!character) {
+          return;
+      }
+
+      if (e.type == 'keyup' && _ignore_next_keyup == character) {
+          _ignore_next_keyup = false;
+          return;
+      }
+
+      _handleCharacter(character, e);
+  }
+
+  /**
+   * determines if the keycode specified is a modifier key or not
+   *
+   * @param {string} key
+   * @returns {boolean}
+   */
+  function _isModifier(key) {
+      return key == 'shift' || key == 'ctrl' || key == 'alt' || key == 'meta';
+  }
+
+  /**
+   * called to set a 1 second timeout on the specified sequence
+   *
+   * this is so after each key press in the sequence you have 1 second
+   * to press the next key before you have to start over
+   *
+   * @returns void
+   */
+  function _resetSequenceTimer() {
+      clearTimeout(_reset_timer);
+      _reset_timer = setTimeout(_resetSequences, 1000);
+  }
+
+  /**
+   * reverses the map lookup so that we can look for specific keys
+   * to see what can and can't use keypress
+   *
+   * @return {Object}
+   */
+  function _getReverseMap() {
+      if (!_REVERSE_MAP) {
+          _REVERSE_MAP = {};
+          for (var key in _MAP) {
+
+              // pull out the numeric keypad from here cause keypress should
+              // be able to detect the keys from the character
+              if (key > 95 && key < 112) {
+                  continue;
+              }
+
+              if (_MAP.hasOwnProperty(key)) {
+                  _REVERSE_MAP[_MAP[key]] = key;
+              }
+          }
+      }
+      return _REVERSE_MAP;
+  }
+
+  /**
+   * picks the best action based on the key combination
+   *
+   * @param {string} key - character for key
+   * @param {Array} modifiers
+   * @param {string=} action passed in
+   */
+  function _pickBestAction(key, modifiers, action) {
+
+      // if no action was picked in we should try to pick the one
+      // that we think would work best for this key
+      if (!action) {
+          action = _getReverseMap()[key] ? 'keydown' : 'keypress';
+      }
+
+      // modifier keys don't work as expected with keypress,
+      // switch to keydown
+      if (action == 'keypress' && modifiers.length) {
+          action = 'keydown';
+      }
+
+      return action;
+  }
+
+  /**
+   * binds a key sequence to an event
+   *
+   * @param {string} combo - combo specified in bind call
+   * @param {Array} keys
+   * @param {Function} callback
+   * @param {string=} action
+   * @returns void
+   */
+  function _bindSequence(combo, keys, callback, action) {
+
+      // start off by adding a sequence level record for this combination
+      // and setting the level to 0
+      _sequence_levels[combo] = 0;
+
+      // if there is no action pick the best one for the first key
+      // in the sequence
+      if (!action) {
+          action = _pickBestAction(keys[0], []);
+      }
+
+      /**
+       * callback to increase the sequence level for this sequence and reset
+       * all other sequences that were active
+       *
+       * @param {Event} e
+       * @returns void
+       */
+      var _increaseSequence = function(e) {
+              _inside_sequence = action;
+              ++_sequence_levels[combo];
+              _resetSequenceTimer();
+          },
+
+          /**
+           * wraps the specified callback inside of another function in order
+           * to reset all sequence counters as soon as this sequence is done
+           *
+           * @param {Event} e
+           * @returns void
+           */
+          _callbackAndReset = function(e) {
+              _fireCallback(callback, e);
+
+              // we should ignore the next key up if the action is key down
+              // or keypress.  this is so if you finish a sequence and
+              // release the key the final key will not trigger a keyup
+              if (action !== 'keyup') {
+                  _ignore_next_keyup = _characterFromEvent(e);
+              }
+
+              // weird race condition if a sequence ends with the key
+              // another sequence begins with
+              setTimeout(_resetSequences, 10);
+          },
+          i;
+
+      // loop through keys one at a time and bind the appropriate callback
+      // function.  for any key leading up to the final one it should
+      // increase the sequence. after the final, it should reset all sequences
+      for (i = 0; i < keys.length; ++i) {
+          _bindSingle(keys[i], i < keys.length - 1 ? _increaseSequence : _callbackAndReset, action, combo, i);
+      }
+  }
+
+  /**
+   * binds a single keyboard combination
+   *
+   * @param {string} combination
+   * @param {Function} callback
+   * @param {string=} action
+   * @param {string=} sequence_name - name of sequence if part of sequence
+   * @param {number=} level - what part of the sequence the command is
+   * @returns void
+   */
+  function _bindSingle(combination, callback, action, sequence_name, level) {
+
+      // make sure multiple spaces in a row become a single space
+      combination = combination.replace(/\s+/g, ' ');
+
+      var sequence = combination.split(' '),
+          i,
+          key,
+          keys,
+          modifiers = [];
+
+      // if this pattern is a sequence of keys then run through this method
+      // to reprocess each pattern one key at a time
+      if (sequence.length > 1) {
+          return _bindSequence(combination, sequence, callback, action);
+      }
+
+      // take the keys from this pattern and figure out what the actual
+      // pattern is all about
+      keys = combination === '+' ? ['+'] : combination.split('+');
+
+      for (i = 0; i < keys.length; ++i) {
+          key = keys[i];
+
+          // normalize key names
+          if (_SPECIAL_ALIASES[key]) {
+              key = _SPECIAL_ALIASES[key];
+          }
+
+          // if this is not a keypress event then we should
+          // be smart about using shift keys
+          // this will only work for US keyboards however
+          if (action && action != 'keypress' && _SHIFT_MAP[key]) {
+              key = _SHIFT_MAP[key];
+              modifiers.push('shift');
+          }
+
+          // if this key is a modifier then add it to the list of modifiers
+          if (_isModifier(key)) {
+              modifiers.push(key);
+          }
+      }
+
+      // depending on what the key combination is
+      // we will try to pick the best event for it
+      action = _pickBestAction(key, modifiers, action);
+
+      // make sure to initialize array if this is the first time
+      // a callback is added for this key
+      if (!_callbacks[key]) {
+          _callbacks[key] = [];
+      }
+
+      // remove an existing match if there is one
+      _getMatches(key, modifiers, action, !sequence_name, combination);
+
+      // add this call back to the array
+      // if it is a sequence put it at the beginning
+      // if not put it at the end
+      //
+      // this is important because the way these are processed expects
+      // the sequence ones to come first
+      _callbacks[key][sequence_name ? 'unshift' : 'push']({
+          callback: callback,
+          modifiers: modifiers,
+          action: action,
+          seq: sequence_name,
+          level: level,
+          combo: combination
+      });
+  }
+
+  /**
+   * binds multiple combinations to the same callback
+   *
+   * @param {Array} combinations
+   * @param {Function} callback
+   * @param {string|undefined} action
+   * @returns void
+   */
+  function _bindMultiple(combinations, callback, action) {
+      for (var i = 0; i < combinations.length; ++i) {
+          _bindSingle(combinations[i], callback, action);
+      }
+  }
+
+  // start!
+  _addEvent(document, 'keypress', _handleKey);
+  _addEvent(document, 'keydown', _handleKey);
+  _addEvent(document, 'keyup', _handleKey);
+
+  var mousetrap = {
+
+      /**
+       * binds an event to mousetrap
+       *
+       * can be a single key, a combination of keys separated with +,
+       * a comma separated list of keys, an array of keys, or
+       * a sequence of keys separated by spaces
+       *
+       * be sure to list the modifier keys first to make sure that the
+       * correct key ends up getting bound (the last key in the pattern)
+       *
+       * @param {string|Array} keys
+       * @param {Function} callback
+       * @param {string=} action - 'keypress', 'keydown', or 'keyup'
+       * @returns void
+       */
+      bind: function(keys, callback, action) {
+          _bindMultiple(keys instanceof Array ? keys : [keys], callback, action);
+          _direct_map[keys + ':' + action] = callback;
+          return this;
+      },
+
+      /**
+       * unbinds an event to mousetrap
+       *
+       * the unbinding sets the callback function of the specified key combo
+       * to an empty function and deletes the corresponding key in the
+       * _direct_map dict.
+       *
+       * the keycombo+action has to be exactly the same as
+       * it was defined in the bind method
+       *
+       * TODO: actually remove this from the _callbacks dictionary instead
+       * of binding an empty function
+       *
+       * @param {string|Array} keys
+       * @param {string} action
+       * @returns void
+       */
+      unbind: function(keys, action) {
+          if (_direct_map[keys + ':' + action]) {
+              delete _direct_map[keys + ':' + action];
+              this.bind(keys, function() {}, action);
+          }
+          return this;
+      },
+
+      /**
+       * triggers an event that has already been bound
+       *
+       * @param {string} keys
+       * @param {string=} action
+       * @returns void
+       */
+      trigger: function(keys, action) {
+          _direct_map[keys + ':' + action]();
+          return this;
+      },
+
+      /**
+       * resets the library back to its initial state.  this is useful
+       * if you want to clear out the current keyboard shortcuts and bind
+       * new ones - for example if you switch to another page
+       *
+       * @returns void
+       */
+      reset: function() {
+          _callbacks = {};
+          _direct_map = {};
+          return this;
+      }
+  };
+
+module.exports = mousetrap;
+
 
 },{}],5:[function(require,module,exports){
 (function( factory ) {
@@ -3880,7 +3724,7 @@ System.get("traceur-runtime@0.0.62/src/runtime/polyfills/polyfills" + '');
 },{}],6:[function(require,module,exports){
 module.exports={
   "name": "clappr",
-  "version": "0.0.77",
+  "version": "0.0.76",
   "description": "An extensible media player for the web",
   "main": "dist/clappr.min.js",
   "scripts": {
@@ -3891,7 +3735,7 @@ module.exports={
     "url": "git@github.com:globocom/clappr.git"
   },
   "author": "Globo.com",
-  "license": "BSD",
+  "license": "ISC",
   "bugs": {
     "url": "https://github.com/globocom/clappr/issues"
   },
@@ -3900,7 +3744,7 @@ module.exports={
   },
   "homepage": "https://github.com/globocom/clappr",
   "devDependencies": {
-    "browserify": "^8.0.3",
+    "browserify": "^7.0.1",
     "chai": "1.10.0",
     "compass-mixins": "0.12.3",
     "dotenv": "^0.4.0",
@@ -3910,7 +3754,7 @@ module.exports={
     "express-alias": "0.4.0",
     "glob": "^4.0.2",
     "gulp": "^3.8.1",
-    "clappr-zepto": "0.0.3",
+    "clappr-zepto": "latest",
     "gulp-compressor": "^0.1.0",
     "gulp-jshint": "1.9.0",
     "gulp-livereload": "^2.1.0",
@@ -3944,7 +3788,7 @@ module.exports={
   },
   "dependencies": {
     "underscore": "1.7.0",
-    "mousetrap": "^1.4.6",
+    "mousetrap": "0.0.1",
     "scrollmonitor": "^1.0.8"
   }
 }
@@ -4753,11 +4597,11 @@ var JST = require('../../base/jst');
 var Styler = require('../../base/styler');
 var UIObject = require('ui_object');
 var Utils = require('../../base/utils');
+var Mousetrap = require('mousetrap');
 var SeekTime = require('../seek_time');
 var Mediator = require('mediator');
 var PlayerInfo = require('player_info');
 var Events = require('events');
-require('mousetrap');
 var MediaControl = function MediaControl(options) {
   var $__0 = this;
   $traceurRuntime.superCall(this, $MediaControl.prototype, "constructor", [options]);
@@ -5266,8 +5110,7 @@ var $Player = Player;
     }
   },
   normalizeSources: function(options) {
-    var sources = _.compact(_.flatten([options.source, options.sources]));
-    return _.isEmpty(sources) ? ['no.op'] : sources;
+    return _.compact(_.flatten([options.source, options.sources]));
   },
   resize: function(size) {
     this.core.resize(size);
@@ -5384,20 +5227,26 @@ var Mediator = require('mediator');
 var _ = require('underscore');
 var $ = require('zepto');
 var Browser = require('browser');
+var Mousetrap = require('mousetrap');
 var seekStringToSeconds = require('../../base/utils').seekStringToSeconds;
 var Events = require('events');
-require('mousetrap');
 var objectIE = '<object type="application/x-shockwave-flash" id="<%= cid %>" classid="clsid:d27cdb6e-ae6d-11cf-96b8-444553540000" data-flash-vod=""><param name="movie" value="<%= swfPath %>"> <param name="quality" value="autohigh"> <param name="swliveconnect" value="true"> <param name="allowScriptAccess" value="always"> <param name="bgcolor" value="#001122"> <param name="allowFullScreen" value="false"> <param name="wmode" value="gpu"> <param name="tabindex" value="1"> <param name=FlashVars value="playbackId=<%= playbackId %>" /> </object>';
 var Flash = function Flash(options) {
   $traceurRuntime.superCall(this, $Flash.prototype, "constructor", [options]);
   this.src = options.src;
+  this.isRTMP = (this.src.indexOf("rtmp") > -1);
   this.defaultBaseSwfPath = "http://cdn.clappr.io/" + Clappr.version + "/assets/";
   this.swfPath = (options.swfBasePath || this.defaultBaseSwfPath) + "Player.swf";
   this.autoPlay = options.autoPlay;
   this.settings = {default: ['seekbar']};
-  this.settings.left = ["playpause", "position", "duration"];
-  this.settings.right = ["fullscreen", "volume"];
-  this.settings.seekEnabled = true;
+  if (this.isRTMP) {
+    this.settings.left = ["playstop"];
+    this.settings.right = ["fullscreen", "volume"];
+  } else {
+    this.settings.left = ["playpause", "position", "duration"];
+    this.settings.right = ["fullscreen", "volume"];
+    this.settings.seekEnabled = true;
+  }
   this.isReady = false;
   this.addListeners();
 };
@@ -5426,7 +5275,7 @@ var $Flash = Flash;
     this.trigger(Events.PLAYBACK_READY, this.name);
   },
   getPlaybackType: function() {
-    return 'vod';
+    return this.isRTMP ? 'live' : 'vod';
   },
   setupFirefox: function() {
     var $el = this.$('embed');
@@ -5489,13 +5338,11 @@ var $Flash = Flash;
   firstPlay: function() {
     var $__0 = this;
     this.currentState = "PLAYING";
-    if (this.el.playerPlay) {
+    if (_.isFunction(this.el.playerPlay)) {
       this.el.playerPlay(this.src);
       this.listenToOnce(this, Events.PLAYBACK_BUFFERFULL, (function() {
         return $__0.checkInitialSeek();
       }));
-    } else {
-      this.listenToOnce(this, EVENTS.PLAYBACK_READY, this.firstPlay);
     }
   },
   checkInitialSeek: function() {
@@ -5575,7 +5422,9 @@ var $Flash = Flash;
   }
 }, {}, Playback);
 Flash.canPlay = function(resource) {
-  if ((!Browser.isMobile && Browser.isFirefox) || Browser.isLegacyIE) {
+  if (resource.indexOf('rtmp') > -1) {
+    return true;
+  } else if ((!Browser.isMobile && Browser.isFirefox) || Browser.isLegacyIE) {
     return _.isString(resource) && !!resource.match(/(.*)\.(mp4|mov|f4v|3gpp|3gp)/);
   } else {
     return _.isString(resource) && !!resource.match(/(.*)\.(mov|f4v|3gpp|3gp)/);
@@ -5985,7 +5834,6 @@ var $HTML5Audio = HTML5Audio;
     this.trigger(Events.PLAYBACK_BUFFERFULL);
   },
   render: function() {
-    this.trigger(Events.PLAYBACK_READY, this.name);
     return this;
   }
 }, {}, Playback);
@@ -6002,10 +5850,10 @@ var Playback = require('playback');
 var JST = require('../../base/jst');
 var Styler = require('../../base/styler');
 var Browser = require('browser');
+var Mousetrap = require('mousetrap');
 var seekStringToSeconds = require('../../base/utils').seekStringToSeconds;
 var Events = require('events');
 var _ = require('underscore');
-require('mousetrap');
 var HTML5Video = function HTML5Video(options) {
   $traceurRuntime.superCall(this, $HTML5Video.prototype, "constructor", [options]);
   this.options = options;
@@ -6209,7 +6057,6 @@ module.exports = HTML5Video;
 
 
 }).call(this,require('_process'))
-
 },{"../../base/jst":7,"../../base/styler":8,"../../base/utils":9,"_process":2,"browser":"browser","events":"events","mousetrap":4,"playback":"playback","underscore":"underscore"}],28:[function(require,module,exports){
 "use strict";
 var Playback = require('playback');
@@ -6426,7 +6273,6 @@ module.exports = BackgroundButton;
 
 
 }).call(this,require('_process'))
-
 },{"../../base/jst":7,"../../base/styler":8,"_process":2,"browser":"browser","events":"events","mediator":"mediator","player_info":"player_info","ui_core_plugin":"ui_core_plugin"}],32:[function(require,module,exports){
 "use strict";
 module.exports = require('./background_button');
@@ -6683,8 +6529,8 @@ module.exports = require('./log');
 
 },{"./log":40}],40:[function(require,module,exports){
 "use strict";
+var Mousetrap = require('mousetrap');
 var _ = require('underscore');
-require('mousetrap');
 var Log = function Log() {
   var $__0 = this;
   Mousetrap.bind(['ctrl+shift+d'], (function() {
@@ -6850,7 +6696,6 @@ module.exports = PosterPlugin;
 
 
 }).call(this,require('_process'))
-
 },{"../../base/jst":7,"../../base/styler":8,"_process":2,"events":"events","mediator":"mediator","player_info":"player_info","ui_container_plugin":"ui_container_plugin","underscore":"underscore","zepto":"zepto"}],42:[function(require,module,exports){
 "use strict";
 module.exports = require('./spinner_three_bounce');
@@ -9050,11 +8895,9 @@ module.exports = UIObject;
 }.call(this));
 
 },{}],"zepto":[function(require,module,exports){
-/* Zepto v1.1.4-76-g2bd5d7a - zepto event ajax callbacks deferred touch selector - zeptojs.com/license */
-var Zepto=function(){function D(t){return null==t?String(t):j[S.call(t)]||"object"}function L(t){return"function"==D(t)}function k(t){return null!=t&&t==t.window}function Z(t){return null!=t&&t.nodeType==t.DOCUMENT_NODE}function $(t){return"object"==D(t)}function F(t){return $(t)&&!k(t)&&Object.getPrototypeOf(t)==Object.prototype}function R(t){return"number"==typeof t.length}function q(t){return s.call(t,function(t){return null!=t})}function W(t){return t.length>0?n.fn.concat.apply([],t):t}function z(t){return t.replace(/::/g,"/").replace(/([A-Z]+)([A-Z][a-z])/g,"$1_$2").replace(/([a-z\d])([A-Z])/g,"$1_$2").replace(/_/g,"-").toLowerCase()}function H(t){return t in c?c[t]:c[t]=new RegExp("(^|\\s)"+t+"(\\s|$)")}function _(t,e){return"number"!=typeof e||l[z(t)]?e:e+"px"}function I(t){var e,n;return f[t]||(e=u.createElement(t),u.body.appendChild(e),n=getComputedStyle(e,"").getPropertyValue("display"),e.parentNode.removeChild(e),"none"==n&&(n="block"),f[t]=n),f[t]}function U(t){return"children"in t?a.call(t.children):n.map(t.childNodes,function(t){return 1==t.nodeType?t:void 0})}function X(t,e){var n,i=t?t.length:0;for(n=0;i>n;n++)this[n]=t[n];this.length=i,this.selector=e||""}function B(n,i,r){for(e in i)r&&(F(i[e])||A(i[e]))?(F(i[e])&&!F(n[e])&&(n[e]={}),A(i[e])&&!A(n[e])&&(n[e]=[]),B(n[e],i[e],r)):i[e]!==t&&(n[e]=i[e])}function V(t,e){return null==e?n(t):n(t).filter(e)}function Y(t,e,n,i){return L(e)?e.call(t,n,i):e}function J(t,e,n){null==n?t.removeAttribute(e):t.setAttribute(e,n)}function G(e,n){var i=e.className||"",r=i&&i.baseVal!==t;return n===t?r?i.baseVal:i:void(r?i.baseVal=n:e.className=n)}function K(t){try{return t?"true"==t||("false"==t?!1:"null"==t?null:+t+""==t?+t:/^[\[\{]/.test(t)?n.parseJSON(t):t):t}catch(e){return t}}function Q(t,e){e(t);for(var n=0,i=t.childNodes.length;i>n;n++)Q(t.childNodes[n],e)}var t,e,n,i,N,P,r=[],o=r.concat,s=r.filter,a=r.slice,u=window.document,f={},c={},l={"column-count":1,columns:1,"font-weight":1,"line-height":1,opacity:1,"z-index":1,zoom:1},h=/^\s*<(\w+|!)[^>]*>/,p=/^<(\w+)\s*\/?>(?:<\/\1>|)$/,d=/<(?!area|br|col|embed|hr|img|input|link|meta|param)(([\w:]+)[^>]*)\/>/gi,m=/^(?:body|html)$/i,g=/([A-Z])/g,v=["val","css","html","text","data","width","height","offset"],y=["after","prepend","before","append"],w=u.createElement("table"),x=u.createElement("tr"),b={tr:u.createElement("tbody"),tbody:w,thead:w,tfoot:w,td:x,th:x,"*":u.createElement("div")},E=/complete|loaded|interactive/,T=/^[\w-]*$/,j={},S=j.toString,C={},O=u.createElement("div"),M={tabindex:"tabIndex",readonly:"readOnly","for":"htmlFor","class":"className",maxlength:"maxLength",cellspacing:"cellSpacing",cellpadding:"cellPadding",rowspan:"rowSpan",colspan:"colSpan",usemap:"useMap",frameborder:"frameBorder",contenteditable:"contentEditable"},A=Array.isArray||function(t){return t instanceof Array};return C.matches=function(t,e){if(!e||!t||1!==t.nodeType)return!1;var n=t.webkitMatchesSelector||t.mozMatchesSelector||t.oMatchesSelector||t.matchesSelector;if(n)return n.call(t,e);var i,r=t.parentNode,o=!r;return o&&(r=O).appendChild(t),i=~C.qsa(r,e).indexOf(t),o&&O.removeChild(t),i},N=function(t){return t.replace(/-+(.)?/g,function(t,e){return e?e.toUpperCase():""})},P=function(t){return s.call(t,function(e,n){return t.indexOf(e)==n})},C.fragment=function(e,i,r){var o,s,f;return p.test(e)&&(o=n(u.createElement(RegExp.$1))),o||(e.replace&&(e=e.replace(d,"<$1></$2>")),i===t&&(i=h.test(e)&&RegExp.$1),i in b||(i="*"),f=b[i],f.innerHTML=""+e,o=n.each(a.call(f.childNodes),function(){f.removeChild(this)})),F(r)&&(s=n(o),n.each(r,function(t,e){v.indexOf(t)>-1?s[t](e):s.attr(t,e)})),o},C.Z=function(t,e){return new X(t,e)},C.isZ=function(t){return t instanceof C.Z},C.init=function(e,i){var r;if(!e)return C.Z();if("string"==typeof e)if(e=e.trim(),"<"==e[0]&&h.test(e))r=C.fragment(e,RegExp.$1,i),e=null;else{if(i!==t)return n(i).find(e);r=C.qsa(u,e)}else{if(L(e))return n(u).ready(e);if(C.isZ(e))return e;if(A(e))r=q(e);else if($(e))r=[e],e=null;else if(h.test(e))r=C.fragment(e.trim(),RegExp.$1,i),e=null;else{if(i!==t)return n(i).find(e);r=C.qsa(u,e)}}return C.Z(r,e)},n=function(t,e){return C.init(t,e)},n.extend=function(t){var e,n=a.call(arguments,1);return"boolean"==typeof t&&(e=t,t=n.shift()),n.forEach(function(n){B(t,n,e)}),t},C.qsa=function(t,e){var n,i="#"==e[0],r=!i&&"."==e[0],o=i||r?e.slice(1):e,s=T.test(o);return t.getElementById&&s&&i?(n=t.getElementById(o))?[n]:[]:1!==t.nodeType&&9!==t.nodeType&&11!==t.nodeType?[]:a.call(s&&!i&&t.getElementsByClassName?r?t.getElementsByClassName(o):t.getElementsByTagName(e):t.querySelectorAll(e))},n.contains=u.documentElement.contains?function(t,e){return t!==e&&t.contains(e)}:function(t,e){for(;e&&(e=e.parentNode);)if(e===t)return!0;return!1},n.type=D,n.isFunction=L,n.isWindow=k,n.isArray=A,n.isPlainObject=F,n.isEmptyObject=function(t){var e;for(e in t)return!1;return!0},n.inArray=function(t,e,n){return r.indexOf.call(e,t,n)},n.camelCase=N,n.trim=function(t){return null==t?"":String.prototype.trim.call(t)},n.uuid=0,n.support={},n.expr={},n.noop=function(){},n.map=function(t,e){var n,r,o,i=[];if(R(t))for(r=0;r<t.length;r++)n=e(t[r],r),null!=n&&i.push(n);else for(o in t)n=e(t[o],o),null!=n&&i.push(n);return W(i)},n.each=function(t,e){var n,i;if(R(t)){for(n=0;n<t.length;n++)if(e.call(t[n],n,t[n])===!1)return t}else for(i in t)if(e.call(t[i],i,t[i])===!1)return t;return t},n.grep=function(t,e){return s.call(t,e)},window.JSON&&(n.parseJSON=JSON.parse),n.each("Boolean Number String Function Array Date RegExp Object Error".split(" "),function(t,e){j["[object "+e+"]"]=e.toLowerCase()}),n.fn={constructor:C.Z,length:0,forEach:r.forEach,reduce:r.reduce,push:r.push,sort:r.sort,splice:r.splice,indexOf:r.indexOf,concat:function(){var t,e,n=[];for(t=0;t<arguments.length;t++)e=arguments[t],n[t]=C.isZ(e)?e.toArray():e;return o.apply(C.isZ(this)?this.toArray():this,n)},map:function(t){return n(n.map(this,function(e,n){return t.call(e,n,e)}))},slice:function(){return n(a.apply(this,arguments))},ready:function(t){return E.test(u.readyState)&&u.body?t(n):u.addEventListener("DOMContentLoaded",function(){t(n)},!1),this},get:function(e){return e===t?a.call(this):this[e>=0?e:e+this.length]},toArray:function(){return this.get()},size:function(){return this.length},remove:function(){return this.each(function(){null!=this.parentNode&&this.parentNode.removeChild(this)})},each:function(t){return r.every.call(this,function(e,n){return t.call(e,n,e)!==!1}),this},filter:function(t){return L(t)?this.not(this.not(t)):n(s.call(this,function(e){return C.matches(e,t)}))},add:function(t,e){return n(P(this.concat(n(t,e))))},is:function(t){return this.length>0&&C.matches(this[0],t)},not:function(e){var i=[];if(L(e)&&e.call!==t)this.each(function(t){e.call(this,t)||i.push(this)});else{var r="string"==typeof e?this.filter(e):R(e)&&L(e.item)?a.call(e):n(e);this.forEach(function(t){r.indexOf(t)<0&&i.push(t)})}return n(i)},has:function(t){return this.filter(function(){return $(t)?n.contains(this,t):n(this).find(t).size()})},eq:function(t){return-1===t?this.slice(t):this.slice(t,+t+1)},first:function(){var t=this[0];return t&&!$(t)?t:n(t)},last:function(){var t=this[this.length-1];return t&&!$(t)?t:n(t)},find:function(t){var e,i=this;return e=t?"object"==typeof t?n(t).filter(function(){var t=this;return r.some.call(i,function(e){return n.contains(e,t)})}):1==this.length?n(C.qsa(this[0],t)):this.map(function(){return C.qsa(this,t)}):n()},closest:function(t,e){var i=this[0],r=!1;for("object"==typeof t&&(r=n(t));i&&!(r?r.indexOf(i)>=0:C.matches(i,t));)i=i!==e&&!Z(i)&&i.parentNode;return n(i)},parents:function(t){for(var e=[],i=this;i.length>0;)i=n.map(i,function(t){return(t=t.parentNode)&&!Z(t)&&e.indexOf(t)<0?(e.push(t),t):void 0});return V(e,t)},parent:function(t){return V(P(this.pluck("parentNode")),t)},children:function(t){return V(this.map(function(){return U(this)}),t)},contents:function(){return this.map(function(){return this.contentDocument||a.call(this.childNodes)})},siblings:function(t){return V(this.map(function(t,e){return s.call(U(e.parentNode),function(t){return t!==e})}),t)},empty:function(){return this.each(function(){this.innerHTML=""})},pluck:function(t){return n.map(this,function(e){return e[t]})},show:function(){return this.each(function(){"none"==this.style.display&&(this.style.display=""),"none"==getComputedStyle(this,"").getPropertyValue("display")&&(this.style.display=I(this.nodeName))})},replaceWith:function(t){return this.before(t).remove()},wrap:function(t){var e=L(t);if(this[0]&&!e)var i=n(t).get(0),r=i.parentNode||this.length>1;return this.each(function(o){n(this).wrapAll(e?t.call(this,o):r?i.cloneNode(!0):i)})},wrapAll:function(t){if(this[0]){n(this[0]).before(t=n(t));for(var e;(e=t.children()).length;)t=e.first();n(t).append(this)}return this},wrapInner:function(t){var e=L(t);return this.each(function(i){var r=n(this),o=r.contents(),s=e?t.call(this,i):t;o.length?o.wrapAll(s):r.append(s)})},unwrap:function(){return this.parent().each(function(){n(this).replaceWith(n(this).children())}),this},clone:function(){return this.map(function(){return this.cloneNode(!0)})},hide:function(){return this.css("display","none")},toggle:function(e){return this.each(function(){var i=n(this);(e===t?"none"==i.css("display"):e)?i.show():i.hide()})},prev:function(t){return n(this.pluck("previousElementSibling")).filter(t||"*")},next:function(t){return n(this.pluck("nextElementSibling")).filter(t||"*")},html:function(t){return 0 in arguments?this.each(function(e){var i=this.innerHTML;n(this).empty().append(Y(this,t,e,i))}):0 in this?this[0].innerHTML:null},text:function(t){return 0 in arguments?this.each(function(e){var n=Y(this,t,e,this.textContent);this.textContent=null==n?"":""+n}):0 in this?this[0].textContent:null},attr:function(n,i){var r;return"string"!=typeof n||1 in arguments?this.each(function(t){if(1===this.nodeType)if($(n))for(e in n)J(this,e,n[e]);else J(this,n,Y(this,i,t,this.getAttribute(n)))}):this.length&&1===this[0].nodeType?!(r=this[0].getAttribute(n))&&n in this[0]?this[0][n]:r:t},removeAttr:function(t){return this.each(function(){1===this.nodeType&&t.split(" ").forEach(function(t){J(this,t)},this)})},prop:function(t,e){return t=M[t]||t,1 in arguments?this.each(function(n){this[t]=Y(this,e,n,this[t])}):this[0]&&this[0][t]},data:function(e,n){var i="data-"+e.replace(g,"-$1").toLowerCase(),r=1 in arguments?this.attr(i,n):this.attr(i);return null!==r?K(r):t},val:function(t){return 0 in arguments?this.each(function(e){this.value=Y(this,t,e,this.value)}):this[0]&&(this[0].multiple?n(this[0]).find("option").filter(function(){return this.selected}).pluck("value"):this[0].value)},offset:function(t){if(t)return this.each(function(e){var i=n(this),r=Y(this,t,e,i.offset()),o=i.offsetParent().offset(),s={top:r.top-o.top,left:r.left-o.left};"static"==i.css("position")&&(s.position="relative"),i.css(s)});if(!this.length)return null;var e=this[0].getBoundingClientRect();return{left:e.left+window.pageXOffset,top:e.top+window.pageYOffset,width:Math.round(e.width),height:Math.round(e.height)}},css:function(t,i){if(arguments.length<2){var r,o=this[0];if(!o)return;if(r=getComputedStyle(o,""),"string"==typeof t)return o.style[N(t)]||r.getPropertyValue(t);if(A(t)){var s={};return n.each(t,function(t,e){s[e]=o.style[N(e)]||r.getPropertyValue(e)}),s}}var a="";if("string"==D(t))i||0===i?a=z(t)+":"+_(t,i):this.each(function(){this.style.removeProperty(z(t))});else for(e in t)t[e]||0===t[e]?a+=z(e)+":"+_(e,t[e])+";":this.each(function(){this.style.removeProperty(z(e))});return this.each(function(){this.style.cssText+=";"+a})},index:function(t){return t?this.indexOf(n(t)[0]):this.parent().children().indexOf(this[0])},hasClass:function(t){return t?r.some.call(this,function(t){return this.test(G(t))},H(t)):!1},addClass:function(t){return t?this.each(function(e){if("className"in this){i=[];var r=G(this),o=Y(this,t,e,r);o.split(/\s+/g).forEach(function(t){n(this).hasClass(t)||i.push(t)},this),i.length&&G(this,r+(r?" ":"")+i.join(" "))}}):this},removeClass:function(e){return this.each(function(n){if("className"in this){if(e===t)return G(this,"");i=G(this),Y(this,e,n,i).split(/\s+/g).forEach(function(t){i=i.replace(H(t)," ")}),G(this,i.trim())}})},toggleClass:function(e,i){return e?this.each(function(r){var o=n(this),s=Y(this,e,r,G(this));s.split(/\s+/g).forEach(function(e){(i===t?!o.hasClass(e):i)?o.addClass(e):o.removeClass(e)})}):this},scrollTop:function(e){if(this.length){var n="scrollTop"in this[0];return e===t?n?this[0].scrollTop:this[0].pageYOffset:this.each(n?function(){this.scrollTop=e}:function(){this.scrollTo(this.scrollX,e)})}},scrollLeft:function(e){if(this.length){var n="scrollLeft"in this[0];return e===t?n?this[0].scrollLeft:this[0].pageXOffset:this.each(n?function(){this.scrollLeft=e}:function(){this.scrollTo(e,this.scrollY)})}},position:function(){if(this.length){var t=this[0],e=this.offsetParent(),i=this.offset(),r=m.test(e[0].nodeName)?{top:0,left:0}:e.offset();return i.top-=parseFloat(n(t).css("margin-top"))||0,i.left-=parseFloat(n(t).css("margin-left"))||0,r.top+=parseFloat(n(e[0]).css("border-top-width"))||0,r.left+=parseFloat(n(e[0]).css("border-left-width"))||0,{top:i.top-r.top,left:i.left-r.left}}},offsetParent:function(){return this.map(function(){for(var t=this.offsetParent||u.body;t&&!m.test(t.nodeName)&&"static"==n(t).css("position");)t=t.offsetParent;return t})}},n.fn.detach=n.fn.remove,["width","height"].forEach(function(e){var i=e.replace(/./,function(t){return t[0].toUpperCase()});n.fn[e]=function(r){var o,s=this[0];return r===t?k(s)?s["inner"+i]:Z(s)?s.documentElement["scroll"+i]:(o=this.offset())&&o[e]:this.each(function(t){s=n(this),s.css(e,Y(this,r,t,s[e]()))})}}),y.forEach(function(t,e){var i=e%2;n.fn[t]=function(){var t,o,r=n.map(arguments,function(e){return t=D(e),"object"==t||"array"==t||null==e?e:C.fragment(e)}),s=this.length>1;return r.length<1?this:this.each(function(t,a){o=i?a:a.parentNode,a=0==e?a.nextSibling:1==e?a.firstChild:2==e?a:null;var f=n.contains(u.documentElement,o);r.forEach(function(t){if(s)t=t.cloneNode(!0);else if(!o)return n(t).remove();o.insertBefore(t,a),f&&Q(t,function(t){null==t.nodeName||"SCRIPT"!==t.nodeName.toUpperCase()||t.type&&"text/javascript"!==t.type||t.src||window.eval.call(window,t.innerHTML)})})})},n.fn[i?t+"To":"insert"+(e?"Before":"After")]=function(e){return n(e)[t](this),this}}),C.Z.prototype=X.prototype=n.fn,C.uniq=P,C.deserializeValue=K,n.zepto=C,n}();window.Zepto=Zepto,void 0===window.$&&(window.$=Zepto),function(t){function l(t){return t._zid||(t._zid=e++)}function h(t,e,n,i){if(e=p(e),e.ns)var r=d(e.ns);return(s[l(t)]||[]).filter(function(t){return!(!t||e.e&&t.e!=e.e||e.ns&&!r.test(t.ns)||n&&l(t.fn)!==l(n)||i&&t.sel!=i)})}function p(t){var e=(""+t).split(".");return{e:e[0],ns:e.slice(1).sort().join(" ")}}function d(t){return new RegExp("(?:^| )"+t.replace(" "," .* ?")+"(?: |$)")}function m(t,e){return t.del&&!u&&t.e in f||!!e}function g(t){return c[t]||u&&f[t]||t}function v(e,i,r,o,a,u,f){var h=l(e),d=s[h]||(s[h]=[]);i.split(/\s/).forEach(function(i){if("ready"==i)return t(document).ready(r);var s=p(i);s.fn=r,s.sel=a,s.e in c&&(r=function(e){var n=e.relatedTarget;return!n||n!==this&&!t.contains(this,n)?s.fn.apply(this,arguments):void 0}),s.del=u;var l=u||r;s.proxy=function(t){if(t=T(t),!t.isImmediatePropagationStopped()){t.data=o;var i=l.apply(e,t._args==n?[t]:[t].concat(t._args));return i===!1&&(t.preventDefault(),t.stopPropagation()),i}},s.i=d.length,d.push(s),"addEventListener"in e&&e.addEventListener(g(s.e),s.proxy,m(s,f))})}function y(t,e,n,i,r){var o=l(t);(e||"").split(/\s/).forEach(function(e){h(t,e,n,i).forEach(function(e){delete s[o][e.i],"removeEventListener"in t&&t.removeEventListener(g(e.e),e.proxy,m(e,r))})})}function T(e,i){return(i||!e.isDefaultPrevented)&&(i||(i=e),t.each(E,function(t,n){var r=i[t];e[t]=function(){return this[n]=w,r&&r.apply(i,arguments)},e[n]=x}),(i.defaultPrevented!==n?i.defaultPrevented:"returnValue"in i?i.returnValue===!1:i.getPreventDefault&&i.getPreventDefault())&&(e.isDefaultPrevented=w)),e}function j(t){var e,i={originalEvent:t};for(e in t)b.test(e)||t[e]===n||(i[e]=t[e]);return T(i,t)}var n,e=1,i=Array.prototype.slice,r=t.isFunction,o=function(t){return"string"==typeof t},s={},a={},u="onfocusin"in window,f={focus:"focusin",blur:"focusout"},c={mouseenter:"mouseover",mouseleave:"mouseout"};a.click=a.mousedown=a.mouseup=a.mousemove="MouseEvents",t.event={add:v,remove:y},t.proxy=function(e,n){var s=2 in arguments&&i.call(arguments,2);if(r(e)){var a=function(){return e.apply(n,s?s.concat(i.call(arguments)):arguments)};return a._zid=l(e),a}if(o(n))return s?(s.unshift(e[n],e),t.proxy.apply(null,s)):t.proxy(e[n],e);throw new TypeError("expected function")},t.fn.bind=function(t,e,n){return this.on(t,e,n)},t.fn.unbind=function(t,e){return this.off(t,e)},t.fn.one=function(t,e,n,i){return this.on(t,e,n,i,1)};var w=function(){return!0},x=function(){return!1},b=/^([A-Z]|returnValue$|layer[XY]$)/,E={preventDefault:"isDefaultPrevented",stopImmediatePropagation:"isImmediatePropagationStopped",stopPropagation:"isPropagationStopped"};t.fn.delegate=function(t,e,n){return this.on(e,t,n)},t.fn.undelegate=function(t,e,n){return this.off(e,t,n)},t.fn.live=function(e,n){return t(document.body).delegate(this.selector,e,n),this},t.fn.die=function(e,n){return t(document.body).undelegate(this.selector,e,n),this},t.fn.on=function(e,s,a,u,f){var c,l,h=this;return e&&!o(e)?(t.each(e,function(t,e){h.on(t,s,a,e,f)}),h):(o(s)||r(u)||u===!1||(u=a,a=s,s=n),(u===n||a===!1)&&(u=a,a=n),u===!1&&(u=x),h.each(function(n,r){f&&(c=function(t){return y(r,t.type,u),u.apply(this,arguments)}),s&&(l=function(e){var n,o=t(e.target).closest(s,r).get(0);return o&&o!==r?(n=t.extend(j(e),{currentTarget:o,liveFired:r}),(c||u).apply(o,[n].concat(i.call(arguments,1)))):void 0}),v(r,e,u,a,s,l||c)}))},t.fn.off=function(e,i,s){var a=this;return e&&!o(e)?(t.each(e,function(t,e){a.off(t,i,e)}),a):(o(i)||r(s)||s===!1||(s=i,i=n),s===!1&&(s=x),a.each(function(){y(this,e,s,i)}))},t.fn.trigger=function(e,n){return e=o(e)||t.isPlainObject(e)?t.Event(e):T(e),e._args=n,this.each(function(){e.type in f&&"function"==typeof this[e.type]?this[e.type]():"dispatchEvent"in this?this.dispatchEvent(e):t(this).triggerHandler(e,n)})},t.fn.triggerHandler=function(e,n){var i,r;return this.each(function(s,a){i=j(o(e)?t.Event(e):e),i._args=n,i.target=a,t.each(h(a,e.type||e),function(t,e){return r=e.proxy(i),i.isImmediatePropagationStopped()?!1:void 0})}),r},"focusin focusout focus blur load resize scroll unload click dblclick mousedown mouseup mousemove mouseover mouseout mouseenter mouseleave change select keydown keypress keyup error".split(" ").forEach(function(e){t.fn[e]=function(t){return 0 in arguments?this.bind(e,t):this.trigger(e)}}),t.Event=function(t,e){o(t)||(e=t,t=e.type);var n=document.createEvent(a[t]||"Events"),i=!0;if(e)for(var r in e)"bubbles"==r?i=!!e[r]:n[r]=e[r];return n.initEvent(t,i,!0),T(n)}}(Zepto),function(t){function h(e,n,i){var r=t.Event(n);return t(e).trigger(r,i),!r.isDefaultPrevented()}function p(t,e,i,r){return t.global?h(e||n,i,r):void 0}function d(e){e.global&&0===t.active++&&p(e,null,"ajaxStart")}function m(e){e.global&&!--t.active&&p(e,null,"ajaxStop")}function g(t,e){var n=e.context;return e.beforeSend.call(n,t,e)===!1||p(e,n,"ajaxBeforeSend",[t,e])===!1?!1:void p(e,n,"ajaxSend",[t,e])}function v(t,e,n,i){var r=n.context,o="success";n.success.call(r,t,o,e),i&&i.resolveWith(r,[t,o,e]),p(n,r,"ajaxSuccess",[e,n,t]),w(o,e,n)}function y(t,e,n,i,r){var o=i.context;i.error.call(o,n,e,t),r&&r.rejectWith(o,[n,e,t]),p(i,o,"ajaxError",[n,i,t||e]),w(e,n,i)}function w(t,e,n){var i=n.context;n.complete.call(i,e,t),p(n,i,"ajaxComplete",[e,n]),m(n)}function x(){}function b(t){return t&&(t=t.split(";",2)[0]),t&&(t==f?"html":t==u?"json":s.test(t)?"script":a.test(t)&&"xml")||"text"}function E(t,e){return""==e?t:(t+"&"+e).replace(/[&?]{1,2}/,"?")}function T(e){e.processData&&e.data&&"string"!=t.type(e.data)&&(e.data=t.param(e.data,e.traditional)),!e.data||e.type&&"GET"!=e.type.toUpperCase()||(e.url=E(e.url,e.data),e.data=void 0)}function j(e,n,i,r){return t.isFunction(n)&&(r=i,i=n,n=void 0),t.isFunction(i)||(r=i,i=void 0),{url:e,data:n,success:i,dataType:r}}function C(e,n,i,r){var o,s=t.isArray(n),a=t.isPlainObject(n);t.each(n,function(n,u){o=t.type(u),r&&(n=i?r:r+"["+(a||"object"==o||"array"==o?n:"")+"]"),!r&&s?e.add(u.name,u.value):"array"==o||!i&&"object"==o?C(e,u,i,n):e.add(n,u)})}var i,r,e=0,n=window.document,o=/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,s=/^(?:text|application)\/javascript/i,a=/^(?:text|application)\/xml/i,u="application/json",f="text/html",c=/^\s*$/,l=n.createElement("a");l.href=window.location.href,t.active=0,t.ajaxJSONP=function(i,r){if(!("type"in i))return t.ajax(i);var f,h,o=i.jsonpCallback,s=(t.isFunction(o)?o():o)||"jsonp"+ ++e,a=n.createElement("script"),u=window[s],c=function(e){t(a).triggerHandler("error",e||"abort")},l={abort:c};return r&&r.promise(l),t(a).on("load error",function(e,n){clearTimeout(h),t(a).off().remove(),"error"!=e.type&&f?v(f[0],l,i,r):y(null,n||"error",l,i,r),window[s]=u,f&&t.isFunction(u)&&u(f[0]),u=f=void 0}),g(l,i)===!1?(c("abort"),l):(window[s]=function(){f=arguments},a.src=i.url.replace(/\?(.+)=\?/,"?$1="+s),n.head.appendChild(a),i.timeout>0&&(h=setTimeout(function(){c("timeout")},i.timeout)),l)},t.ajaxSettings={type:"GET",beforeSend:x,success:x,error:x,complete:x,context:null,global:!0,xhr:function(){return new window.XMLHttpRequest},accepts:{script:"text/javascript, application/javascript, application/x-javascript",json:u,xml:"application/xml, text/xml",html:f,text:"text/plain"},crossDomain:!1,timeout:0,processData:!0,cache:!0},t.ajax=function(e){var a,u,o=t.extend({},e||{}),s=t.Deferred&&t.Deferred();for(i in t.ajaxSettings)void 0===o[i]&&(o[i]=t.ajaxSettings[i]);d(o),o.crossDomain||(a=n.createElement("a"),a.href=o.url,a.href=a.href,o.crossDomain=l.protocol+"//"+l.host!=a.protocol+"//"+a.host),o.url||(o.url=window.location.toString()),(u=o.url.indexOf("#"))>-1&&(o.url=o.url.slice(0,u)),T(o);var f=o.dataType,h=/\?.+=\?/.test(o.url);if(h&&(f="jsonp"),o.cache!==!1&&(e&&e.cache===!0||"script"!=f&&"jsonp"!=f)||(o.url=E(o.url,"_="+Date.now())),"jsonp"==f)return h||(o.url=E(o.url,o.jsonp?o.jsonp+"=?":o.jsonp===!1?"":"callback=?")),t.ajaxJSONP(o,s);var N,p=o.accepts[f],m={},w=function(t,e){m[t.toLowerCase()]=[t,e]},j=/^([\w-]+:)\/\//.test(o.url)?RegExp.$1:window.location.protocol,S=o.xhr(),C=S.setRequestHeader;if(s&&s.promise(S),o.crossDomain||w("X-Requested-With","XMLHttpRequest"),w("Accept",p||"*/*"),(p=o.mimeType||p)&&(p.indexOf(",")>-1&&(p=p.split(",",2)[0]),S.overrideMimeType&&S.overrideMimeType(p)),(o.contentType||o.contentType!==!1&&o.data&&"GET"!=o.type.toUpperCase())&&w("Content-Type",o.contentType||"application/x-www-form-urlencoded"),o.headers)for(r in o.headers)w(r,o.headers[r]);if(S.setRequestHeader=w,S.onreadystatechange=function(){if(4==S.readyState){S.onreadystatechange=x,clearTimeout(N);var e,n=!1;if(S.status>=200&&S.status<300||304==S.status||0==S.status&&"file:"==j){f=f||b(o.mimeType||S.getResponseHeader("content-type")),e=S.responseText;try{"script"==f?(1,eval)(e):"xml"==f?e=S.responseXML:"json"==f&&(e=c.test(e)?null:t.parseJSON(e))}catch(i){n=i}n?y(n,"parsererror",S,o,s):v(e,S,o,s)}else y(S.statusText||null,S.status?"error":"abort",S,o,s)}},g(S,o)===!1)return S.abort(),y(null,"abort",S,o,s),S;if(o.xhrFields)for(r in o.xhrFields)S[r]=o.xhrFields[r];var P="async"in o?o.async:!0;S.open(o.type,o.url,P,o.username,o.password);for(r in m)C.apply(S,m[r]);return o.timeout>0&&(N=setTimeout(function(){S.onreadystatechange=x,S.abort(),y(null,"timeout",S,o,s)},o.timeout)),S.send(o.data?o.data:null),S},t.get=function(){return t.ajax(j.apply(null,arguments))},t.post=function(){var e=j.apply(null,arguments);return e.type="POST",t.ajax(e)},t.getJSON=function(){var e=j.apply(null,arguments);return e.dataType="json",t.ajax(e)},t.fn.load=function(e,n,i){if(!this.length)return this;var a,r=this,s=e.split(/\s/),u=j(e,n,i),f=u.success;return s.length>1&&(u.url=s[0],a=s[1]),u.success=function(e){r.html(a?t("<div>").html(e.replace(o,"")).find(a):e),f&&f.apply(r,arguments)},t.ajax(u),this};var S=encodeURIComponent;t.param=function(e,n){var i=[];return i.add=function(e,n){t.isFunction(n)&&(n=n()),null==n&&(n=""),this.push(S(e)+"="+S(n))},C(i,e,n),i.join("&").replace(/%20/g,"+")}}(Zepto),function(t){t.Callbacks=function(e){e=t.extend({},e);var n,i,r,o,s,a,u=[],f=!e.once&&[],c=function(t){for(n=e.memory&&t,i=!0,a=o||0,o=0,s=u.length,r=!0;u&&s>a;++a)if(u[a].apply(t[0],t[1])===!1&&e.stopOnFalse){n=!1;break}r=!1,u&&(f?f.length&&c(f.shift()):n?u.length=0:l.disable())},l={add:function(){if(u){var i=u.length,a=function(n){t.each(n,function(t,n){"function"==typeof n?e.unique&&l.has(n)||u.push(n):n&&n.length&&"string"!=typeof n&&a(n)})};a(arguments),r?s=u.length:n&&(o=i,c(n))}return this},remove:function(){return u&&t.each(arguments,function(e,n){for(var i;(i=t.inArray(n,u,i))>-1;)u.splice(i,1),r&&(s>=i&&--s,a>=i&&--a)}),this},has:function(e){return!(!u||!(e?t.inArray(e,u)>-1:u.length))},empty:function(){return s=u.length=0,this},disable:function(){return u=f=n=void 0,this},disabled:function(){return!u},lock:function(){return f=void 0,n||l.disable(),this},locked:function(){return!f},fireWith:function(t,e){return!u||i&&!f||(e=e||[],e=[t,e.slice?e.slice():e],r?f.push(e):c(e)),this},fire:function(){return l.fireWith(this,arguments)},fired:function(){return!!i}};return l}}(Zepto),function(t){function n(e){var i=[["resolve","done",t.Callbacks({once:1,memory:1}),"resolved"],["reject","fail",t.Callbacks({once:1,memory:1}),"rejected"],["notify","progress",t.Callbacks({memory:1})]],r="pending",o={state:function(){return r},always:function(){return s.done(arguments).fail(arguments),this},then:function(){var e=arguments;return n(function(n){t.each(i,function(i,r){var a=t.isFunction(e[i])&&e[i];s[r[1]](function(){var e=a&&a.apply(this,arguments);if(e&&t.isFunction(e.promise))e.promise().done(n.resolve).fail(n.reject).progress(n.notify);else{var i=this===o?n.promise():this,s=a?[e]:arguments;n[r[0]+"With"](i,s)}})}),e=null}).promise()},promise:function(e){return null!=e?t.extend(e,o):o}},s={};return t.each(i,function(t,e){var n=e[2],a=e[3];o[e[1]]=n.add,a&&n.add(function(){r=a},i[1^t][2].disable,i[2][2].lock),s[e[0]]=function(){return s[e[0]+"With"](this===s?o:this,arguments),this},s[e[0]+"With"]=n.fireWith}),o.promise(s),e&&e.call(s,s),s}var e=Array.prototype.slice;t.when=function(i){var f,c,l,r=e.call(arguments),o=r.length,s=0,a=1!==o||i&&t.isFunction(i.promise)?o:0,u=1===a?i:n(),h=function(t,n,i){return function(r){n[t]=this,i[t]=arguments.length>1?e.call(arguments):r,i===f?u.notifyWith(n,i):--a||u.resolveWith(n,i)}};if(o>1)for(f=new Array(o),c=new Array(o),l=new Array(o);o>s;++s)r[s]&&t.isFunction(r[s].promise)?r[s].promise().done(h(s,l,r)).fail(u.reject).progress(h(s,c,f)):--a;return a||u.resolveWith(l,r),u.promise()},t.Deferred=n}(Zepto),function(t){function u(t,e,n,i){return Math.abs(t-e)>=Math.abs(n-i)?t-e>0?"Left":"Right":n-i>0?"Up":"Down"}function f(){o=null,e.last&&(e.el.trigger("longTap"),e={})}function c(){o&&clearTimeout(o),o=null}function l(){n&&clearTimeout(n),i&&clearTimeout(i),r&&clearTimeout(r),o&&clearTimeout(o),n=i=r=o=null,e={}}function h(t){return("touch"==t.pointerType||t.pointerType==t.MSPOINTER_TYPE_TOUCH)&&t.isPrimary}function p(t,e){return t.type=="pointer"+e||t.type.toLowerCase()=="mspointer"+e}var n,i,r,o,a,e={},s=750;t(document).ready(function(){var d,m,y,w,g=0,v=0;"MSGesture"in window&&(a=new MSGesture,a.target=document.body),t(document).bind("MSGestureEnd",function(t){var n=t.velocityX>1?"Right":t.velocityX<-1?"Left":t.velocityY>1?"Down":t.velocityY<-1?"Up":null;n&&(e.el.trigger("swipe"),e.el.trigger("swipe"+n))}).on("touchstart MSPointerDown pointerdown",function(i){(!(w=p(i,"down"))||h(i))&&(y=w?i:i.touches[0],i.touches&&1===i.touches.length&&e.x2&&(e.x2=void 0,e.y2=void 0),d=Date.now(),m=d-(e.last||d),e.el=t("tagName"in y.target?y.target:y.target.parentNode),n&&clearTimeout(n),e.x1=y.pageX,e.y1=y.pageY,m>0&&250>=m&&(e.isDoubleTap=!0),e.last=d,o=setTimeout(f,s),a&&w&&a.addPointer(i.pointerId))}).on("touchmove MSPointerMove pointermove",function(t){(!(w=p(t,"move"))||h(t))&&(y=w?t:t.touches[0],c(),e.x2=y.pageX,e.y2=y.pageY,g+=Math.abs(e.x1-e.x2),v+=Math.abs(e.y1-e.y2))}).on("touchend MSPointerUp pointerup",function(o){(!(w=p(o,"up"))||h(o))&&(c(),e.x2&&Math.abs(e.x1-e.x2)>30||e.y2&&Math.abs(e.y1-e.y2)>30?r=setTimeout(function(){e.el.trigger("swipe"),e.el.trigger("swipe"+u(e.x1,e.x2,e.y1,e.y2)),e={}},0):"last"in e&&(30>g&&30>v?i=setTimeout(function(){var i=t.Event("tap");i.cancelTouch=l,e.el.trigger(i),e.isDoubleTap?(e.el&&e.el.trigger("doubleTap"),e={}):n=setTimeout(function(){n=null,e.el&&e.el.trigger("singleTap"),e={}},250)},0):e={}),g=v=0)}).on("touchcancel MSPointerCancel pointercancel",l),t(window).on("scroll",l)}),["swipe","swipeLeft","swipeRight","swipeUp","swipeDown","doubleTap","tap","singleTap","longTap"].forEach(function(e){t.fn[e]=function(t){return this.on(e,t)}})}(Zepto),function(t){function r(e){return e=t(e),!(!e.width()&&!e.height())&&"none"!==e.css("display")}function f(t,e){t=t.replace(/=#\]/g,'="#"]');var n,i,r=s.exec(t);if(r&&r[2]in o&&(n=o[r[2]],i=r[3],t=r[1],i)){var a=Number(i);i=isNaN(a)?i.replace(/^["']|["']$/g,""):a}return e(t,n,i)}var e=t.zepto,n=e.qsa,i=e.matches,o=t.expr[":"]={visible:function(){return r(this)?this:void 0},hidden:function(){return r(this)?void 0:this},selected:function(){return this.selected?this:void 0},checked:function(){return this.checked?this:void 0},parent:function(){return this.parentNode},first:function(t){return 0===t?this:void 0},last:function(t,e){return t===e.length-1?this:void 0},eq:function(t,e,n){return t===n?this:void 0},contains:function(e,n,i){return t(this).text().indexOf(i)>-1?this:void 0},has:function(t,n,i){return e.qsa(this,i).length?this:void 0}},s=new RegExp("(.*):(\\w+)(?:\\(([^)]+)\\))?$\\s*"),a=/^\s*>/,u="Zepto"+ +new Date;e.qsa=function(i,r){return f(r,function(o,s,f){try{var c;!o&&s?o="*":a.test(o)&&(c=t(i).addClass(u),o="."+u+" "+o);var l=n(i,o)}catch(h){throw console.error("error performing selector: %o",r),h}finally{c&&c.removeClass(u)}return s?e.uniq(t.map(l,function(t,e){return s.call(t,e,l,f)})):l})},e.matches=function(t,e){return f(e,function(e,n,r){return!(e&&!i(t,e)||n&&n.call(t,null,r)!==t)})}}(Zepto);
+/* Zepto v1.1.4-67-g76e4233 - zepto deferred detect ajax touch selector event callbacks - zeptojs.com/license */
+var Zepto=function(){function k(t){return null==t?String(t):S[j.call(t)]||"object"}function D(t){return"function"==k(t)}function L(t){return null!=t&&t==t.window}function Z(t){return null!=t&&t.nodeType==t.DOCUMENT_NODE}function F(t){return"object"==k(t)}function $(t){return F(t)&&!L(t)&&Object.getPrototypeOf(t)==Object.prototype}function R(t){return"number"==typeof t.length}function _(t){return s.call(t,function(t){return null!=t})}function q(t){return t.length>0?n.fn.concat.apply([],t):t}function W(t){return t.replace(/::/g,"/").replace(/([A-Z]+)([A-Z][a-z])/g,"$1_$2").replace(/([a-z\d])([A-Z])/g,"$1_$2").replace(/_/g,"-").toLowerCase()}function B(t){return t in c?c[t]:c[t]=new RegExp("(^|\\s)"+t+"(\\s|$)")}function I(t,e){return"number"!=typeof e||l[W(t)]?e:e+"px"}function z(t){var e,n;return f[t]||(e=u.createElement(t),u.body.appendChild(e),n=getComputedStyle(e,"").getPropertyValue("display"),e.parentNode.removeChild(e),"none"==n&&(n="block"),f[t]=n),f[t]}function H(t){return"children"in t?a.call(t.children):n.map(t.childNodes,function(t){return 1==t.nodeType?t:void 0})}function V(t,e){var n,i=t?t.length:0;for(n=0;i>n;n++)this[n]=t[n];this.length=i,this.selector=e||""}function U(n,i,r){for(e in i)r&&($(i[e])||A(i[e]))?($(i[e])&&!$(n[e])&&(n[e]={}),A(i[e])&&!A(n[e])&&(n[e]=[]),U(n[e],i[e],r)):i[e]!==t&&(n[e]=i[e])}function X(t,e){return null==e?n(t):n(t).filter(e)}function Y(t,e,n,i){return D(e)?e.call(t,n,i):e}function J(t,e,n){null==n?t.removeAttribute(e):t.setAttribute(e,n)}function G(e,n){var i=e.className||"",r=i&&i.baseVal!==t;return n===t?r?i.baseVal:i:void(r?i.baseVal=n:e.className=n)}function K(t){try{return t?"true"==t||("false"==t?!1:"null"==t?null:+t+""==t?+t:/^[\[\{]/.test(t)?n.parseJSON(t):t):t}catch(e){return t}}function Q(t,e){e(t);for(var n=0,i=t.childNodes.length;i>n;n++)Q(t.childNodes[n],e)}var t,e,n,i,P,N,r=[],o=r.concat,s=r.filter,a=r.slice,u=window.document,f={},c={},l={"column-count":1,columns:1,"font-weight":1,"line-height":1,opacity:1,"z-index":1,zoom:1},h=/^\s*<(\w+|!)[^>]*>/,p=/^<(\w+)\s*\/?>(?:<\/\1>|)$/,d=/<(?!area|br|col|embed|hr|img|input|link|meta|param)(([\w:]+)[^>]*)\/>/gi,m=/^(?:body|html)$/i,g=/([A-Z])/g,v=["val","css","html","text","data","width","height","offset"],y=["after","prepend","before","append"],w=u.createElement("table"),b=u.createElement("tr"),x={tr:u.createElement("tbody"),tbody:w,thead:w,tfoot:w,td:b,th:b,"*":u.createElement("div")},T=/complete|loaded|interactive/,E=/^[\w-]*$/,S={},j=S.toString,C={},O=u.createElement("div"),M={tabindex:"tabIndex",readonly:"readOnly","for":"htmlFor","class":"className",maxlength:"maxLength",cellspacing:"cellSpacing",cellpadding:"cellPadding",rowspan:"rowSpan",colspan:"colSpan",usemap:"useMap",frameborder:"frameBorder",contenteditable:"contentEditable"},A=Array.isArray||function(t){return t instanceof Array};return C.matches=function(t,e){if(!e||!t||1!==t.nodeType)return!1;var n=t.webkitMatchesSelector||t.mozMatchesSelector||t.oMatchesSelector||t.matchesSelector;if(n)return n.call(t,e);var i,r=t.parentNode,o=!r;return o&&(r=O).appendChild(t),i=~C.qsa(r,e).indexOf(t),o&&O.removeChild(t),i},P=function(t){return t.replace(/-+(.)?/g,function(t,e){return e?e.toUpperCase():""})},N=function(t){return s.call(t,function(e,n){return t.indexOf(e)==n})},C.fragment=function(e,i,r){var o,s,f;return p.test(e)&&(o=n(u.createElement(RegExp.$1))),o||(e.replace&&(e=e.replace(d,"<$1></$2>")),i===t&&(i=h.test(e)&&RegExp.$1),i in x||(i="*"),f=x[i],f.innerHTML=""+e,o=n.each(a.call(f.childNodes),function(){f.removeChild(this)})),$(r)&&(s=n(o),n.each(r,function(t,e){v.indexOf(t)>-1?s[t](e):s.attr(t,e)})),o},C.Z=function(t,e){return new V(t,e)},C.isZ=function(t){return t instanceof C.Z},C.init=function(e,i){var r;if(!e)return C.Z();if("string"==typeof e)if(e=e.trim(),"<"==e[0]&&h.test(e))r=C.fragment(e,RegExp.$1,i),e=null;else{if(i!==t)return n(i).find(e);r=C.qsa(u,e)}else{if(D(e))return n(u).ready(e);if(C.isZ(e))return e;if(A(e))r=_(e);else if(F(e))r=[e],e=null;else if(h.test(e))r=C.fragment(e.trim(),RegExp.$1,i),e=null;else{if(i!==t)return n(i).find(e);r=C.qsa(u,e)}}return C.Z(r,e)},n=function(t,e){return C.init(t,e)},n.extend=function(t){var e,n=a.call(arguments,1);return"boolean"==typeof t&&(e=t,t=n.shift()),n.forEach(function(n){U(t,n,e)}),t},C.qsa=function(t,e){var n,i="#"==e[0],r=!i&&"."==e[0],o=i||r?e.slice(1):e,s=E.test(o);return t.getElementById&&s&&i?(n=t.getElementById(o))?[n]:[]:1!==t.nodeType&&9!==t.nodeType&&11!==t.nodeType?[]:a.call(s&&!i&&t.getElementsByClassName?r?t.getElementsByClassName(o):t.getElementsByTagName(e):t.querySelectorAll(e))},n.contains=u.documentElement.contains?function(t,e){return t!==e&&t.contains(e)}:function(t,e){for(;e&&(e=e.parentNode);)if(e===t)return!0;return!1},n.type=k,n.isFunction=D,n.isWindow=L,n.isArray=A,n.isPlainObject=$,n.isEmptyObject=function(t){var e;for(e in t)return!1;return!0},n.inArray=function(t,e,n){return r.indexOf.call(e,t,n)},n.camelCase=P,n.trim=function(t){return null==t?"":String.prototype.trim.call(t)},n.uuid=0,n.support={},n.expr={},n.noop=function(){},n.map=function(t,e){var n,r,o,i=[];if(R(t))for(r=0;r<t.length;r++)n=e(t[r],r),null!=n&&i.push(n);else for(o in t)n=e(t[o],o),null!=n&&i.push(n);return q(i)},n.each=function(t,e){var n,i;if(R(t)){for(n=0;n<t.length;n++)if(e.call(t[n],n,t[n])===!1)return t}else for(i in t)if(e.call(t[i],i,t[i])===!1)return t;return t},n.grep=function(t,e){return s.call(t,e)},window.JSON&&(n.parseJSON=JSON.parse),n.each("Boolean Number String Function Array Date RegExp Object Error".split(" "),function(t,e){S["[object "+e+"]"]=e.toLowerCase()}),n.fn={constructor:C.Z,length:0,forEach:r.forEach,reduce:r.reduce,push:r.push,sort:r.sort,splice:r.splice,indexOf:r.indexOf,concat:function(){var t,e,n=[];for(t=0;t<arguments.length;t++)e=arguments[t],n[t]=C.isZ(e)?e.toArray():e;return o.apply(C.isZ(this)?this.toArray():this,n)},map:function(t){return n(n.map(this,function(e,n){return t.call(e,n,e)}))},slice:function(){return n(a.apply(this,arguments))},ready:function(t){return T.test(u.readyState)&&u.body?t(n):u.addEventListener("DOMContentLoaded",function(){t(n)},!1),this},get:function(e){return e===t?a.call(this):this[e>=0?e:e+this.length]},toArray:function(){return this.get()},size:function(){return this.length},remove:function(){return this.each(function(){null!=this.parentNode&&this.parentNode.removeChild(this)})},each:function(t){return r.every.call(this,function(e,n){return t.call(e,n,e)!==!1}),this},filter:function(t){return D(t)?this.not(this.not(t)):n(s.call(this,function(e){return C.matches(e,t)}))},add:function(t,e){return n(N(this.concat(n(t,e))))},is:function(t){return this.length>0&&C.matches(this[0],t)},not:function(e){var i=[];if(D(e)&&e.call!==t)this.each(function(t){e.call(this,t)||i.push(this)});else{var r="string"==typeof e?this.filter(e):R(e)&&D(e.item)?a.call(e):n(e);this.forEach(function(t){r.indexOf(t)<0&&i.push(t)})}return n(i)},has:function(t){return this.filter(function(){return F(t)?n.contains(this,t):n(this).find(t).size()})},eq:function(t){return-1===t?this.slice(t):this.slice(t,+t+1)},first:function(){var t=this[0];return t&&!F(t)?t:n(t)},last:function(){var t=this[this.length-1];return t&&!F(t)?t:n(t)},find:function(t){var e,i=this;return e=t?"object"==typeof t?n(t).filter(function(){var t=this;return r.some.call(i,function(e){return n.contains(e,t)})}):1==this.length?n(C.qsa(this[0],t)):this.map(function(){return C.qsa(this,t)}):n()},closest:function(t,e){var i=this[0],r=!1;for("object"==typeof t&&(r=n(t));i&&!(r?r.indexOf(i)>=0:C.matches(i,t));)i=i!==e&&!Z(i)&&i.parentNode;return n(i)},parents:function(t){for(var e=[],i=this;i.length>0;)i=n.map(i,function(t){return(t=t.parentNode)&&!Z(t)&&e.indexOf(t)<0?(e.push(t),t):void 0});return X(e,t)},parent:function(t){return X(N(this.pluck("parentNode")),t)},children:function(t){return X(this.map(function(){return H(this)}),t)},contents:function(){return this.map(function(){return a.call(this.childNodes)})},siblings:function(t){return X(this.map(function(t,e){return s.call(H(e.parentNode),function(t){return t!==e})}),t)},empty:function(){return this.each(function(){this.innerHTML=""})},pluck:function(t){return n.map(this,function(e){return e[t]})},show:function(){return this.each(function(){"none"==this.style.display&&(this.style.display=""),"none"==getComputedStyle(this,"").getPropertyValue("display")&&(this.style.display=z(this.nodeName))})},replaceWith:function(t){return this.before(t).remove()},wrap:function(t){var e=D(t);if(this[0]&&!e)var i=n(t).get(0),r=i.parentNode||this.length>1;return this.each(function(o){n(this).wrapAll(e?t.call(this,o):r?i.cloneNode(!0):i)})},wrapAll:function(t){if(this[0]){n(this[0]).before(t=n(t));for(var e;(e=t.children()).length;)t=e.first();n(t).append(this)}return this},wrapInner:function(t){var e=D(t);return this.each(function(i){var r=n(this),o=r.contents(),s=e?t.call(this,i):t;o.length?o.wrapAll(s):r.append(s)})},unwrap:function(){return this.parent().each(function(){n(this).replaceWith(n(this).children())}),this},clone:function(){return this.map(function(){return this.cloneNode(!0)})},hide:function(){return this.css("display","none")},toggle:function(e){return this.each(function(){var i=n(this);(e===t?"none"==i.css("display"):e)?i.show():i.hide()})},prev:function(t){return n(this.pluck("previousElementSibling")).filter(t||"*")},next:function(t){return n(this.pluck("nextElementSibling")).filter(t||"*")},html:function(t){return 0 in arguments?this.each(function(e){var i=this.innerHTML;n(this).empty().append(Y(this,t,e,i))}):0 in this?this[0].innerHTML:null},text:function(t){return 0 in arguments?this.each(function(e){var n=Y(this,t,e,this.textContent);this.textContent=null==n?"":""+n}):0 in this?this[0].textContent:null},attr:function(n,i){var r;return"string"!=typeof n||1 in arguments?this.each(function(t){if(1===this.nodeType)if(F(n))for(e in n)J(this,e,n[e]);else J(this,n,Y(this,i,t,this.getAttribute(n)))}):this.length&&1===this[0].nodeType?!(r=this[0].getAttribute(n))&&n in this[0]?this[0][n]:r:t},removeAttr:function(t){return this.each(function(){1===this.nodeType&&t.split(" ").forEach(function(t){J(this,t)},this)})},prop:function(t,e){return t=M[t]||t,1 in arguments?this.each(function(n){this[t]=Y(this,e,n,this[t])}):this[0]&&this[0][t]},data:function(e,n){var i="data-"+e.replace(g,"-$1").toLowerCase(),r=1 in arguments?this.attr(i,n):this.attr(i);return null!==r?K(r):t},val:function(t){return 0 in arguments?this.each(function(e){this.value=Y(this,t,e,this.value)}):this[0]&&(this[0].multiple?n(this[0]).find("option").filter(function(){return this.selected}).pluck("value"):this[0].value)},offset:function(t){if(t)return this.each(function(e){var i=n(this),r=Y(this,t,e,i.offset()),o=i.offsetParent().offset(),s={top:r.top-o.top,left:r.left-o.left};"static"==i.css("position")&&(s.position="relative"),i.css(s)});if(!this.length)return null;var e=this[0].getBoundingClientRect();return{left:e.left+window.pageXOffset,top:e.top+window.pageYOffset,width:Math.round(e.width),height:Math.round(e.height)}},css:function(t,i){if(arguments.length<2){var r,o=this[0];if(!o)return;if(r=getComputedStyle(o,""),"string"==typeof t)return o.style[P(t)]||r.getPropertyValue(t);if(A(t)){var s={};return n.each(t,function(t,e){s[e]=o.style[P(e)]||r.getPropertyValue(e)}),s}}var a="";if("string"==k(t))i||0===i?a=W(t)+":"+I(t,i):this.each(function(){this.style.removeProperty(W(t))});else for(e in t)t[e]||0===t[e]?a+=W(e)+":"+I(e,t[e])+";":this.each(function(){this.style.removeProperty(W(e))});return this.each(function(){this.style.cssText+=";"+a})},index:function(t){return t?this.indexOf(n(t)[0]):this.parent().children().indexOf(this[0])},hasClass:function(t){return t?r.some.call(this,function(t){return this.test(G(t))},B(t)):!1},addClass:function(t){return t?this.each(function(e){if("className"in this){i=[];var r=G(this),o=Y(this,t,e,r);o.split(/\s+/g).forEach(function(t){n(this).hasClass(t)||i.push(t)},this),i.length&&G(this,r+(r?" ":"")+i.join(" "))}}):this},removeClass:function(e){return this.each(function(n){if("className"in this){if(e===t)return G(this,"");i=G(this),Y(this,e,n,i).split(/\s+/g).forEach(function(t){i=i.replace(B(t)," ")}),G(this,i.trim())}})},toggleClass:function(e,i){return e?this.each(function(r){var o=n(this),s=Y(this,e,r,G(this));s.split(/\s+/g).forEach(function(e){(i===t?!o.hasClass(e):i)?o.addClass(e):o.removeClass(e)})}):this},scrollTop:function(e){if(this.length){var n="scrollTop"in this[0];return e===t?n?this[0].scrollTop:this[0].pageYOffset:this.each(n?function(){this.scrollTop=e}:function(){this.scrollTo(this.scrollX,e)})}},scrollLeft:function(e){if(this.length){var n="scrollLeft"in this[0];return e===t?n?this[0].scrollLeft:this[0].pageXOffset:this.each(n?function(){this.scrollLeft=e}:function(){this.scrollTo(e,this.scrollY)})}},position:function(){if(this.length){var t=this[0],e=this.offsetParent(),i=this.offset(),r=m.test(e[0].nodeName)?{top:0,left:0}:e.offset();return i.top-=parseFloat(n(t).css("margin-top"))||0,i.left-=parseFloat(n(t).css("margin-left"))||0,r.top+=parseFloat(n(e[0]).css("border-top-width"))||0,r.left+=parseFloat(n(e[0]).css("border-left-width"))||0,{top:i.top-r.top,left:i.left-r.left}}},offsetParent:function(){return this.map(function(){for(var t=this.offsetParent||u.body;t&&!m.test(t.nodeName)&&"static"==n(t).css("position");)t=t.offsetParent;return t})}},n.fn.detach=n.fn.remove,["width","height"].forEach(function(e){var i=e.replace(/./,function(t){return t[0].toUpperCase()});n.fn[e]=function(r){var o,s=this[0];return r===t?L(s)?s["inner"+i]:Z(s)?s.documentElement["scroll"+i]:(o=this.offset())&&o[e]:this.each(function(t){s=n(this),s.css(e,Y(this,r,t,s[e]()))})}}),y.forEach(function(t,e){var i=e%2;n.fn[t]=function(){var t,o,r=n.map(arguments,function(e){return t=k(e),"object"==t||"array"==t||null==e?e:C.fragment(e)}),s=this.length>1;return r.length<1?this:this.each(function(t,a){o=i?a:a.parentNode,a=0==e?a.nextSibling:1==e?a.firstChild:2==e?a:null;var f=n.contains(u.documentElement,o);r.forEach(function(t){if(s)t=t.cloneNode(!0);else if(!o)return n(t).remove();o.insertBefore(t,a),f&&Q(t,function(t){null==t.nodeName||"SCRIPT"!==t.nodeName.toUpperCase()||t.type&&"text/javascript"!==t.type||t.src||window.eval.call(window,t.innerHTML)})})})},n.fn[i?t+"To":"insert"+(e?"Before":"After")]=function(e){return n(e)[t](this),this}}),C.Z.prototype=V.prototype=n.fn,C.uniq=N,C.deserializeValue=K,n.zepto=C,n}();window.Zepto=Zepto,void 0===window.$&&(window.$=Zepto),function(t){function n(e){var i=[["resolve","done",t.Callbacks({once:1,memory:1}),"resolved"],["reject","fail",t.Callbacks({once:1,memory:1}),"rejected"],["notify","progress",t.Callbacks({memory:1})]],r="pending",o={state:function(){return r},always:function(){return s.done(arguments).fail(arguments),this},then:function(){var e=arguments;return n(function(n){t.each(i,function(i,r){var a=t.isFunction(e[i])&&e[i];s[r[1]](function(){var e=a&&a.apply(this,arguments);if(e&&t.isFunction(e.promise))e.promise().done(n.resolve).fail(n.reject).progress(n.notify);else{var i=this===o?n.promise():this,s=a?[e]:arguments;n[r[0]+"With"](i,s)}})}),e=null}).promise()},promise:function(e){return null!=e?t.extend(e,o):o}},s={};return t.each(i,function(t,e){var n=e[2],a=e[3];o[e[1]]=n.add,a&&n.add(function(){r=a},i[1^t][2].disable,i[2][2].lock),s[e[0]]=function(){return s[e[0]+"With"](this===s?o:this,arguments),this},s[e[0]+"With"]=n.fireWith}),o.promise(s),e&&e.call(s,s),s}var e=Array.prototype.slice;t.when=function(i){var f,c,l,r=e.call(arguments),o=r.length,s=0,a=1!==o||i&&t.isFunction(i.promise)?o:0,u=1===a?i:n(),h=function(t,n,i){return function(r){n[t]=this,i[t]=arguments.length>1?e.call(arguments):r,i===f?u.notifyWith(n,i):--a||u.resolveWith(n,i)}};if(o>1)for(f=new Array(o),c=new Array(o),l=new Array(o);o>s;++s)r[s]&&t.isFunction(r[s].promise)?r[s].promise().done(h(s,l,r)).fail(u.reject).progress(h(s,c,f)):--a;return a||u.resolveWith(l,r),u.promise()},t.Deferred=n}(Zepto),function(t){function e(t,e){var n=this.os={},i=this.browser={},r=t.match(/Web[kK]it[\/]{0,1}([\d.]+)/),o=t.match(/(Android);?[\s\/]+([\d.]+)?/),s=!!t.match(/\(Macintosh\; Intel /),a=t.match(/(iPad).*OS\s([\d_]+)/),u=t.match(/(iPod)(.*OS\s([\d_]+))?/),f=!a&&t.match(/(iPhone\sOS)\s([\d_]+)/),c=t.match(/(webOS|hpwOS)[\s\/]([\d.]+)/),l=/Win\d{2}|Windows/.test(e),h=t.match(/Windows Phone ([\d.]+)/),p=c&&t.match(/TouchPad/),d=t.match(/Kindle\/([\d.]+)/),m=t.match(/Silk\/([\d._]+)/),g=t.match(/(BlackBerry).*Version\/([\d.]+)/),v=t.match(/(BB10).*Version\/([\d.]+)/),y=t.match(/(RIM\sTablet\sOS)\s([\d.]+)/),w=t.match(/PlayBook/),b=t.match(/Chrome\/([\d.]+)/)||t.match(/CriOS\/([\d.]+)/),x=t.match(/Firefox\/([\d.]+)/),T=t.match(/\((?:Mobile|Tablet); rv:([\d.]+)\).*Firefox\/[\d.]+/),E=t.match(/MSIE\s([\d.]+)/)||t.match(/Trident\/[\d](?=[^\?]+).*rv:([0-9.].)/),S=!b&&t.match(/(iPhone|iPod|iPad).*AppleWebKit(?!.*Safari)/),j=S||t.match(/Version\/([\d.]+)([^S](Safari)|[^M]*(Mobile)[^S]*(Safari))/);(i.webkit=!!r)&&(i.version=r[1]),o&&(n.android=!0,n.version=o[2]),f&&!u&&(n.ios=n.iphone=!0,n.version=f[2].replace(/_/g,".")),a&&(n.ios=n.ipad=!0,n.version=a[2].replace(/_/g,".")),u&&(n.ios=n.ipod=!0,n.version=u[3]?u[3].replace(/_/g,"."):null),h&&(n.wp=!0,n.version=h[1]),c&&(n.webos=!0,n.version=c[2]),p&&(n.touchpad=!0),g&&(n.blackberry=!0,n.version=g[2]),v&&(n.bb10=!0,n.version=v[2]),y&&(n.rimtabletos=!0,n.version=y[2]),w&&(i.playbook=!0),d&&(n.kindle=!0,n.version=d[1]),m&&(i.silk=!0,i.version=m[1]),!m&&n.android&&t.match(/Kindle Fire/)&&(i.silk=!0),b&&(i.chrome=!0,i.version=b[1]),x&&(i.firefox=!0,i.version=x[1]),T&&(n.firefoxos=!0,n.version=T[1]),E&&(i.ie=!0,i.version=E[1]),j&&(s||n.ios||l)&&(i.safari=!0,n.ios||(i.version=j[1])),S&&(i.webview=!0),n.tablet=!!(a||w||o&&!t.match(/Mobile/)||x&&t.match(/Tablet/)||E&&!t.match(/Phone/)&&t.match(/Touch/)),n.phone=!(n.tablet||n.ipod||!(o||f||c||g||v||b&&t.match(/Android/)||b&&t.match(/CriOS\/([\d.]+)/)||x&&t.match(/Mobile/)||E&&t.match(/Touch/)))}e.call(t,navigator.userAgent,navigator.platform),t.__detect=e}(Zepto),function(t){function h(e,n,i){var r=t.Event(n);return t(e).trigger(r,i),!r.isDefaultPrevented()}function p(t,e,i,r){return t.global?h(e||n,i,r):void 0}function d(e){e.global&&0===t.active++&&p(e,null,"ajaxStart")}function m(e){e.global&&!--t.active&&p(e,null,"ajaxStop")}function g(t,e){var n=e.context;return e.beforeSend.call(n,t,e)===!1||p(e,n,"ajaxBeforeSend",[t,e])===!1?!1:void p(e,n,"ajaxSend",[t,e])}function v(t,e,n,i){var r=n.context,o="success";n.success.call(r,t,o,e),i&&i.resolveWith(r,[t,o,e]),p(n,r,"ajaxSuccess",[e,n,t]),w(o,e,n)}function y(t,e,n,i,r){var o=i.context;i.error.call(o,n,e,t),r&&r.rejectWith(o,[n,e,t]),p(i,o,"ajaxError",[n,i,t||e]),w(e,n,i)}function w(t,e,n){var i=n.context;n.complete.call(i,e,t),p(n,i,"ajaxComplete",[e,n]),m(n)}function b(){}function x(t){return t&&(t=t.split(";",2)[0]),t&&(t==f?"html":t==u?"json":s.test(t)?"script":a.test(t)&&"xml")||"text"}function T(t,e){return""==e?t:(t+"&"+e).replace(/[&?]{1,2}/,"?")}function E(e){e.processData&&e.data&&"string"!=t.type(e.data)&&(e.data=t.param(e.data,e.traditional)),!e.data||e.type&&"GET"!=e.type.toUpperCase()||(e.url=T(e.url,e.data),e.data=void 0)}function S(e,n,i,r){return t.isFunction(n)&&(r=i,i=n,n=void 0),t.isFunction(i)||(r=i,i=void 0),{url:e,data:n,success:i,dataType:r}}function C(e,n,i,r){var o,s=t.isArray(n),a=t.isPlainObject(n);t.each(n,function(n,u){o=t.type(u),r&&(n=i?r:r+"["+(a||"object"==o||"array"==o?n:"")+"]"),!r&&s?e.add(u.name,u.value):"array"==o||!i&&"object"==o?C(e,u,i,n):e.add(n,u)})}var i,r,e=0,n=window.document,o=/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,s=/^(?:text|application)\/javascript/i,a=/^(?:text|application)\/xml/i,u="application/json",f="text/html",c=/^\s*$/,l=n.createElement("a");l.href=window.location.href,t.active=0,t.ajaxJSONP=function(i,r){if(!("type"in i))return t.ajax(i);var f,h,o=i.jsonpCallback,s=(t.isFunction(o)?o():o)||"jsonp"+ ++e,a=n.createElement("script"),u=window[s],c=function(e){t(a).triggerHandler("error",e||"abort")},l={abort:c};return r&&r.promise(l),t(a).on("load error",function(e,n){clearTimeout(h),t(a).off().remove(),"error"!=e.type&&f?v(f[0],l,i,r):y(null,n||"error",l,i,r),window[s]=u,f&&t.isFunction(u)&&u(f[0]),u=f=void 0}),g(l,i)===!1?(c("abort"),l):(window[s]=function(){f=arguments},a.src=i.url.replace(/\?(.+)=\?/,"?$1="+s),n.head.appendChild(a),i.timeout>0&&(h=setTimeout(function(){c("timeout")},i.timeout)),l)},t.ajaxSettings={type:"GET",beforeSend:b,success:b,error:b,complete:b,context:null,global:!0,xhr:function(){return new window.XMLHttpRequest},accepts:{script:"text/javascript, application/javascript, application/x-javascript",json:u,xml:"application/xml, text/xml",html:f,text:"text/plain"},crossDomain:!1,timeout:0,processData:!0,cache:!0},t.ajax=function(e){var a,o=t.extend({},e||{}),s=t.Deferred&&t.Deferred();for(i in t.ajaxSettings)void 0===o[i]&&(o[i]=t.ajaxSettings[i]);d(o),o.crossDomain||(a=n.createElement("a"),a.href=o.url,a.href=a.href,o.crossDomain=l.protocol+"//"+l.host!=a.protocol+"//"+a.host),o.url||(o.url=window.location.toString()),E(o);var u=o.dataType,f=/\?.+=\?/.test(o.url);if(f&&(u="jsonp"),o.cache!==!1&&(e&&e.cache===!0||"script"!=u&&"jsonp"!=u)||(o.url=T(o.url,"_="+Date.now())),"jsonp"==u)return f||(o.url=T(o.url,o.jsonp?o.jsonp+"=?":o.jsonp===!1?"":"callback=?")),t.ajaxJSONP(o,s);var C,h=o.accepts[u],p={},m=function(t,e){p[t.toLowerCase()]=[t,e]},w=/^([\w-]+:)\/\//.test(o.url)?RegExp.$1:window.location.protocol,S=o.xhr(),j=S.setRequestHeader;if(s&&s.promise(S),o.crossDomain||m("X-Requested-With","XMLHttpRequest"),m("Accept",h||"*/*"),(h=o.mimeType||h)&&(h.indexOf(",")>-1&&(h=h.split(",",2)[0]),S.overrideMimeType&&S.overrideMimeType(h)),(o.contentType||o.contentType!==!1&&o.data&&"GET"!=o.type.toUpperCase())&&m("Content-Type",o.contentType||"application/x-www-form-urlencoded"),o.headers)for(r in o.headers)m(r,o.headers[r]);if(S.setRequestHeader=m,S.onreadystatechange=function(){if(4==S.readyState){S.onreadystatechange=b,clearTimeout(C);var e,n=!1;if(S.status>=200&&S.status<300||304==S.status||0==S.status&&"file:"==w){u=u||x(o.mimeType||S.getResponseHeader("content-type")),e=S.responseText;try{"script"==u?(1,eval)(e):"xml"==u?e=S.responseXML:"json"==u&&(e=c.test(e)?null:t.parseJSON(e))}catch(i){n=i}n?y(n,"parsererror",S,o,s):v(e,S,o,s)}else y(S.statusText||null,S.status?"error":"abort",S,o,s)}},g(S,o)===!1)return S.abort(),y(null,"abort",S,o,s),S;if(o.xhrFields)for(r in o.xhrFields)S[r]=o.xhrFields[r];var P="async"in o?o.async:!0;S.open(o.type,o.url,P,o.username,o.password);for(r in p)j.apply(S,p[r]);return o.timeout>0&&(C=setTimeout(function(){S.onreadystatechange=b,S.abort(),y(null,"timeout",S,o,s)},o.timeout)),S.send(o.data?o.data:null),S},t.get=function(){return t.ajax(S.apply(null,arguments))},t.post=function(){var e=S.apply(null,arguments);return e.type="POST",t.ajax(e)},t.getJSON=function(){var e=S.apply(null,arguments);return e.dataType="json",t.ajax(e)},t.fn.load=function(e,n,i){if(!this.length)return this;var a,r=this,s=e.split(/\s/),u=S(e,n,i),f=u.success;return s.length>1&&(u.url=s[0],a=s[1]),u.success=function(e){r.html(a?t("<div>").html(e.replace(o,"")).find(a):e),f&&f.apply(r,arguments)},t.ajax(u),this};var j=encodeURIComponent;t.param=function(e,n){var i=[];return i.add=function(e,n){t.isFunction(n)&&(n=n()),null==n&&(n=""),this.push(j(e)+"="+j(n))},C(i,e,n),i.join("&").replace(/%20/g,"+")}}(Zepto),function(t){function u(t,e,n,i){return Math.abs(t-e)>=Math.abs(n-i)?t-e>0?"Left":"Right":n-i>0?"Up":"Down"}function f(){o=null,e.last&&(e.el.trigger("longTap"),e={})}function c(){o&&clearTimeout(o),o=null}function l(){n&&clearTimeout(n),i&&clearTimeout(i),r&&clearTimeout(r),o&&clearTimeout(o),n=i=r=o=null,e={}}function h(t){return("touch"==t.pointerType||t.pointerType==t.MSPOINTER_TYPE_TOUCH)&&t.isPrimary}function p(t,e){return t.type=="pointer"+e||t.type.toLowerCase()=="mspointer"+e}var n,i,r,o,a,e={},s=750;t(document).ready(function(){var d,m,y,w,g=0,v=0;"MSGesture"in window&&(a=new MSGesture,a.target=document.body),t(document).bind("MSGestureEnd",function(t){var n=t.velocityX>1?"Right":t.velocityX<-1?"Left":t.velocityY>1?"Down":t.velocityY<-1?"Up":null;n&&(e.el.trigger("swipe"),e.el.trigger("swipe"+n))}).on("touchstart MSPointerDown pointerdown",function(i){(!(w=p(i,"down"))||h(i))&&(y=w?i:i.touches[0],i.touches&&1===i.touches.length&&e.x2&&(e.x2=void 0,e.y2=void 0),d=Date.now(),m=d-(e.last||d),e.el=t("tagName"in y.target?y.target:y.target.parentNode),n&&clearTimeout(n),e.x1=y.pageX,e.y1=y.pageY,m>0&&250>=m&&(e.isDoubleTap=!0),e.last=d,o=setTimeout(f,s),a&&w&&a.addPointer(i.pointerId))}).on("touchmove MSPointerMove pointermove",function(t){(!(w=p(t,"move"))||h(t))&&(y=w?t:t.touches[0],c(),e.x2=y.pageX,e.y2=y.pageY,g+=Math.abs(e.x1-e.x2),v+=Math.abs(e.y1-e.y2))}).on("touchend MSPointerUp pointerup",function(o){(!(w=p(o,"up"))||h(o))&&(c(),e.x2&&Math.abs(e.x1-e.x2)>30||e.y2&&Math.abs(e.y1-e.y2)>30?r=setTimeout(function(){e.el.trigger("swipe"),e.el.trigger("swipe"+u(e.x1,e.x2,e.y1,e.y2)),e={}},0):"last"in e&&(30>g&&30>v?i=setTimeout(function(){var i=t.Event("tap");i.cancelTouch=l,e.el.trigger(i),e.isDoubleTap?(e.el&&e.el.trigger("doubleTap"),e={}):n=setTimeout(function(){n=null,e.el&&e.el.trigger("singleTap"),e={}},250)},0):e={}),g=v=0)}).on("touchcancel MSPointerCancel pointercancel",l),t(window).on("scroll",l)}),["swipe","swipeLeft","swipeRight","swipeUp","swipeDown","doubleTap","tap","singleTap","longTap"].forEach(function(e){t.fn[e]=function(t){return this.on(e,t)}})}(Zepto),function(t){function r(e){return e=t(e),!(!e.width()&&!e.height())&&"none"!==e.css("display")}function f(t,e){t=t.replace(/=#\]/g,'="#"]');var n,i,r=s.exec(t);if(r&&r[2]in o&&(n=o[r[2]],i=r[3],t=r[1],i)){var a=Number(i);i=isNaN(a)?i.replace(/^["']|["']$/g,""):a}return e(t,n,i)}var e=t.zepto,n=e.qsa,i=e.matches,o=t.expr[":"]={visible:function(){return r(this)?this:void 0},hidden:function(){return r(this)?void 0:this},selected:function(){return this.selected?this:void 0},checked:function(){return this.checked?this:void 0},parent:function(){return this.parentNode},first:function(t){return 0===t?this:void 0},last:function(t,e){return t===e.length-1?this:void 0},eq:function(t,e,n){return t===n?this:void 0},contains:function(e,n,i){return t(this).text().indexOf(i)>-1?this:void 0},has:function(t,n,i){return e.qsa(this,i).length?this:void 0}},s=new RegExp("(.*):(\\w+)(?:\\(([^)]+)\\))?$\\s*"),a=/^\s*>/,u="Zepto"+ +new Date;e.qsa=function(i,r){return f(r,function(o,s,f){try{var c;!o&&s?o="*":a.test(o)&&(c=t(i).addClass(u),o="."+u+" "+o);var l=n(i,o)}catch(h){throw console.error("error performing selector: %o",r),h}finally{c&&c.removeClass(u)}return s?e.uniq(t.map(l,function(t,e){return s.call(t,e,l,f)})):l})},e.matches=function(t,e){return f(e,function(e,n,r){return!(e&&!i(t,e)||n&&n.call(t,null,r)!==t)})}}(Zepto),function(t){function l(t){return t._zid||(t._zid=e++)}function h(t,e,n,i){if(e=p(e),e.ns)var r=d(e.ns);return(s[l(t)]||[]).filter(function(t){return!(!t||e.e&&t.e!=e.e||e.ns&&!r.test(t.ns)||n&&l(t.fn)!==l(n)||i&&t.sel!=i)})}function p(t){var e=(""+t).split(".");return{e:e[0],ns:e.slice(1).sort().join(" ")}}function d(t){return new RegExp("(?:^| )"+t.replace(" "," .* ?")+"(?: |$)")}function m(t,e){return t.del&&!u&&t.e in f||!!e}function g(t){return c[t]||u&&f[t]||t}function v(e,i,r,o,a,u,f){var h=l(e),d=s[h]||(s[h]=[]);i.split(/\s/).forEach(function(i){if("ready"==i)return t(document).ready(r);var s=p(i);s.fn=r,s.sel=a,s.e in c&&(r=function(e){var n=e.relatedTarget;return!n||n!==this&&!t.contains(this,n)?s.fn.apply(this,arguments):void 0}),s.del=u;var l=u||r;s.proxy=function(t){if(t=E(t),!t.isImmediatePropagationStopped()){t.data=o;var i=l.apply(e,t._args==n?[t]:[t].concat(t._args));return i===!1&&(t.preventDefault(),t.stopPropagation()),i}},s.i=d.length,d.push(s),"addEventListener"in e&&e.addEventListener(g(s.e),s.proxy,m(s,f))})}function y(t,e,n,i,r){var o=l(t);(e||"").split(/\s/).forEach(function(e){h(t,e,n,i).forEach(function(e){delete s[o][e.i],"removeEventListener"in t&&t.removeEventListener(g(e.e),e.proxy,m(e,r))})})}function E(e,i){return(i||!e.isDefaultPrevented)&&(i||(i=e),t.each(T,function(t,n){var r=i[t];e[t]=function(){return this[n]=w,r&&r.apply(i,arguments)},e[n]=b}),(i.defaultPrevented!==n?i.defaultPrevented:"returnValue"in i?i.returnValue===!1:i.getPreventDefault&&i.getPreventDefault())&&(e.isDefaultPrevented=w)),e}function S(t){var e,i={originalEvent:t};for(e in t)x.test(e)||t[e]===n||(i[e]=t[e]);return E(i,t)}var n,e=1,i=Array.prototype.slice,r=t.isFunction,o=function(t){return"string"==typeof t},s={},a={},u="onfocusin"in window,f={focus:"focusin",blur:"focusout"},c={mouseenter:"mouseover",mouseleave:"mouseout"};a.click=a.mousedown=a.mouseup=a.mousemove="MouseEvents",t.event={add:v,remove:y},t.proxy=function(e,n){var s=2 in arguments&&i.call(arguments,2);if(r(e)){var a=function(){return e.apply(n,s?s.concat(i.call(arguments)):arguments)};return a._zid=l(e),a}if(o(n))return s?(s.unshift(e[n],e),t.proxy.apply(null,s)):t.proxy(e[n],e);throw new TypeError("expected function")},t.fn.bind=function(t,e,n){return this.on(t,e,n)},t.fn.unbind=function(t,e){return this.off(t,e)},t.fn.one=function(t,e,n,i){return this.on(t,e,n,i,1)};var w=function(){return!0},b=function(){return!1},x=/^([A-Z]|returnValue$|layer[XY]$)/,T={preventDefault:"isDefaultPrevented",stopImmediatePropagation:"isImmediatePropagationStopped",stopPropagation:"isPropagationStopped"};t.fn.delegate=function(t,e,n){return this.on(e,t,n)},t.fn.undelegate=function(t,e,n){return this.off(e,t,n)},t.fn.live=function(e,n){return t(document.body).delegate(this.selector,e,n),this},t.fn.die=function(e,n){return t(document.body).undelegate(this.selector,e,n),this},t.fn.on=function(e,s,a,u,f){var c,l,h=this;return e&&!o(e)?(t.each(e,function(t,e){h.on(t,s,a,e,f)}),h):(o(s)||r(u)||u===!1||(u=a,a=s,s=n),(r(a)||a===!1)&&(u=a,a=n),u===!1&&(u=b),h.each(function(n,r){f&&(c=function(t){return y(r,t.type,u),u.apply(this,arguments)}),s&&(l=function(e){var n,o=t(e.target).closest(s,r).get(0);return o&&o!==r?(n=t.extend(S(e),{currentTarget:o,liveFired:r}),(c||u).apply(o,[n].concat(i.call(arguments,1)))):void 0}),v(r,e,u,a,s,l||c)}))},t.fn.off=function(e,i,s){var a=this;return e&&!o(e)?(t.each(e,function(t,e){a.off(t,i,e)}),a):(o(i)||r(s)||s===!1||(s=i,i=n),s===!1&&(s=b),a.each(function(){y(this,e,s,i)}))},t.fn.trigger=function(e,n){return e=o(e)||t.isPlainObject(e)?t.Event(e):E(e),e._args=n,this.each(function(){e.type in f&&"function"==typeof this[e.type]?this[e.type]():"dispatchEvent"in this?this.dispatchEvent(e):t(this).triggerHandler(e,n)})},t.fn.triggerHandler=function(e,n){var i,r;return this.each(function(s,a){i=S(o(e)?t.Event(e):e),i._args=n,i.target=a,t.each(h(a,e.type||e),function(t,e){return r=e.proxy(i),i.isImmediatePropagationStopped()?!1:void 0})}),r},"focusin focusout focus blur load resize scroll unload click dblclick mousedown mouseup mousemove mouseover mouseout mouseenter mouseleave change select keydown keypress keyup error".split(" ").forEach(function(e){t.fn[e]=function(t){return 0 in arguments?this.bind(e,t):this.trigger(e)}}),t.Event=function(t,e){o(t)||(e=t,t=e.type);var n=document.createEvent(a[t]||"Events"),i=!0;if(e)for(var r in e)"bubbles"==r?i=!!e[r]:n[r]=e[r];return n.initEvent(t,i,!0),E(n)}}(Zepto),function(t){t.Callbacks=function(e){e=t.extend({},e);var n,i,r,o,s,a,u=[],f=!e.once&&[],c=function(t){for(n=e.memory&&t,i=!0,a=o||0,o=0,s=u.length,r=!0;u&&s>a;++a)if(u[a].apply(t[0],t[1])===!1&&e.stopOnFalse){n=!1;break}r=!1,u&&(f?f.length&&c(f.shift()):n?u.length=0:l.disable())},l={add:function(){if(u){var i=u.length,a=function(n){t.each(n,function(t,n){"function"==typeof n?e.unique&&l.has(n)||u.push(n):n&&n.length&&"string"!=typeof n&&a(n)})};a(arguments),r?s=u.length:n&&(o=i,c(n))}return this},remove:function(){return u&&t.each(arguments,function(e,n){for(var i;(i=t.inArray(n,u,i))>-1;)u.splice(i,1),r&&(s>=i&&--s,a>=i&&--a)}),this
+},has:function(e){return!(!u||!(e?t.inArray(e,u)>-1:u.length))},empty:function(){return s=u.length=0,this},disable:function(){return u=f=n=void 0,this},disabled:function(){return!u},lock:function(){return f=void 0,n||l.disable(),this},locked:function(){return!f},fireWith:function(t,e){return!u||i&&!f||(e=e||[],e=[t,e.slice?e.slice():e],r?f.push(e):c(e)),this},fire:function(){return l.fireWith(this,arguments)},fired:function(){return!!i}};return l}}(Zepto);
 module.exports = Zepto;
 
-},{}]},{},[3,1])
-
-
-//# sourceMappingURL=clappr.map
+},{}]},{},[3,1]);

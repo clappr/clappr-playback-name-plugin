@@ -9,7 +9,7 @@ module.exports = require("./src/main");
 var _ = require('underscore');
 module.exports = {
   'playbackname': _.template('<p><%= name %></p>'),
-  CSS: {'playbackname': '.playbackname[data-playbackname]{position:absolute;z-index:3000;top:20px;right:20px;font-smooth:never;-webkit-font-smoothing:none;background-color:rgba(0,0,0,.7);color:#fff;border-radius:3px;font-size:16px;padding:10px}.playbackname[data-playbackname]>p{color:#fff}'}
+  CSS: {'playbackname': '.playbackname[data-playbackname]{position:absolute;z-index:3000;top:20px;left:20px;font-smooth:never;-webkit-font-smoothing:none;background-color:rgba(0,0,0,.7);color:#fff;border-radius:3px;font-size:16px;padding:10px}.playbackname[data-playbackname]>p{color:#fff}'}
 };
 
 
@@ -2906,6 +2906,7 @@ var JST = require('.././jst');
 var Styler = require('./styler');
 var PlaybackName = function PlaybackName(options) {
   $traceurRuntime.superConstructor($PlaybackName).call(this, options);
+  this.listenTo(this.container.playback, 'playback:settingsupdate', this.render);
   this.render();
 };
 var $PlaybackName = PlaybackName;
@@ -2923,7 +2924,11 @@ var $PlaybackName = PlaybackName;
     };
   },
   render: function() {
-    var playback_name = this.container.playback.name;
+    if (!!this.container.playback.playback) {
+      var playback_name = this.container.playback.playback.name;
+    } else {
+      var playback_name = this.container.playback.name;
+    }
     this.$el.html(this.template({'name': playback_name}));
     this.container.$el.append(this.el);
     var style = Styler.getStyleFor(this.name);
