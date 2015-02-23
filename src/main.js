@@ -1,6 +1,7 @@
 var UiContainerPlugin = require('ui_container_plugin');
 var JST = require('.././jst');
 var Styler = require('./styler')
+var Events = Clappr.Events
 
 class PlaybackName extends UiContainerPlugin {
 
@@ -16,7 +17,7 @@ class PlaybackName extends UiContainerPlugin {
   
   constructor(options) {
     super(options)
-    this.listenTo(this.container.playback, 'playback:settingsupdate', this.render)
+    this.listenTo(this.container.playback, Events.PLAYBACK_SETTINGSUPDATE, this.render)
     this.render()
   }
 
