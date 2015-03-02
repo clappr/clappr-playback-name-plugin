@@ -6,7 +6,7 @@
   <script type="text/javascript" charset="utf-8" src="dist/playbackname.js"></script>
   <title>clappr-playback-name-plugin Test Page</title>
   <script type="text/javascript" charset="utf-8">
-window.onload = function() {
+window.addEventListener('DOMContentLoaded', function() {
   var player = new Clappr.Player({
     sources: ['http://www.html5rocks.com/en/tutorials/video/basics/devstories.mp4'],
     plugins: {
@@ -15,7 +15,7 @@ window.onload = function() {
     width: 640, height: 360,
   });
   player.attachTo(document.getElementById('player-wrapper'));
-}
+});
   </script>
 </head>
 <body>
