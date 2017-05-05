@@ -1,5 +1,7 @@
 # Clappr Playback's Name Plugin
 
+[![Greenkeeper badge](https://badges.greenkeeper.io/clappr/clappr-playback-name-plugin.svg)](https://greenkeeper.io/)
+
 <img src="https://raw.githubusercontent.com/barbosa/clappr-playback-name-plugin/master/screenshot.png"/>
 
 ## Usage
